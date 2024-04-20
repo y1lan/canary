@@ -34,20 +34,12 @@ set(LLVM_LINK_COMPONENTS
         LLVMipo
 )
 
-
 add_executable(canary canary.cpp)
-if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-        target_link_libraries(canary PRIVATE
-                CanaryMemoryLeak CanaryNullPointer CanaryDyckAA CanaryTransform CanarySupport
-                -Wl,--start-group
-                ${LLVM_LINK_COMPONENTS}
-                -Wl,--end-group
-                z ncurses pthread dl
-        )
-else()
-        target_link_libraries(canary PRIVATE
-                CanaryMemoryLeak CanaryNullPointer CanaryDyckAA CanaryTransform CanarySupport
-                ${LLVM_LINK_COMPONENTS}
-                z ncurses pthread dl
-        )
-endif()
+
+target_link_libraries(canary PRIVATE
+        CanaryMemoryLeak CanaryNullPointer CanaryDyckAA CanaryTransform CanarySupport
+        -Wl,--start-group
+        ${LLVM_LINK_COMPONENTS}
+        -Wl,--end-group
+        z ncurses pthread dl
+)

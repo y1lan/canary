@@ -43,7 +43,7 @@ void Statistics::run(Module &M) {
             } else if (auto *CI = dyn_cast<CallInst>(&I)) {
                 if (auto *Callee = CI->getCalledFunction()) {
                     if (Callee->empty()) {
-                        for (unsigned K = 0; K < CI->getNumArgOperands(); ++K) {
+                        for (unsigned K = 0; K < CI->getFunctionType()->getNumParams(); ++K) {
                             if (CI->getArgOperand(K)->getType()->isPointerTy()) {
                                 ++NumDerefInstructions;
                                 break;

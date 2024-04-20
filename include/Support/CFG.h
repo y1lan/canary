@@ -24,6 +24,7 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instruction.h>
 #include <vector>
+#include <map>
 
 using namespace llvm;
 

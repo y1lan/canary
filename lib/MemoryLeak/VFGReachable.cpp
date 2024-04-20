@@ -5,6 +5,7 @@
 #include "DyckAA/DyckVFG.h"
 #include "MemoryLeak/MLDReport.h"
 #include "MemoryLeak/MLDVFG.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -46,7 +47,7 @@ VFGReachable::VFGReachable(llvm::Module &M, MLDVFG *MVFG, DyckAliasAnalysis *DAA
     for (auto &F : M) {
         auto CtrlFlowGraph = std::make_shared<CFG>(&F);
         CFGMap.insert({&F, CtrlFlowGraph});
-        for (auto &BB : F.getBasicBlockList()) {
+        for (auto &BB : make_range(F.begin(), F.end())) {
             // BBID[&BB] = BBIDCounter++;
             addBBID(&BB);
             Instruction *TerminatorInst = BB.getTerminator();
