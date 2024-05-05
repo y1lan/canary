@@ -16,29 +16,50 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <llvm/IR/InstIterator.h>
-#include <llvm/IR/Instructions.h>
+#include "DyckAA/DyckVFG.h"
 #include "DyckAA/DyckAliasAnalysis.h"
 #include "DyckAA/DyckGraph.h"
 #include "DyckAA/DyckGraphNode.h"
 #include "DyckAA/DyckModRefAnalysis.h"
-#include "DyckAA/DyckVFG.h"
+#include "Support/API.h"
 #include "Support/CFG.h"
 #include "Support/RecursiveTimer.h"
 #include "Support/ThreadPool.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/raw_ostream.h"
+#include <cassert>
+#include <functional>
+#include <llvm/IR/InstIterator.h>
+#include <llvm/IR/Instructions.h>
+#include <map>
+#include <vector>
+
+static std::map<Function *, std::map<DyckGraphNode *, std::vector<LoadInst *>>> FuncLoadMap;
+
+static std::map<Function *, std::map<DyckGraphNode *, std::vector<StoreInst *>>> FuncStoreMap;
+static std::map<Function *, std::map<DyckGraphNode *, std::vector<InsertValueInst *>>> FuncInsertValueMap;
+static std::map<Function *, std::map<DyckGraphNode *, std::vector<ExtractValueInst *>>> FuncExtractValueMap;
+
+static void collectInst(Function &F, DyckAliasAnalysis *DAA, DyckModRefAnalysis *DMRA);
 
 DyckVFG::DyckVFG(DyckAliasAnalysis *DAA, DyckModRefAnalysis *DMRA, Module *M) {
     // create a VFG for each function
     std::map<Function *, CFGRef> LocalCFGMap;
-    for (auto &F: *M) {
-        if (F.empty()) continue;
+    for (auto &F : *M) {
+        if (F.empty())
+            continue;
         LocalCFGMap[&F] = nullptr;
         buildLocalVFG(F);
+        collectInst(F, DAA, DMRA);
     }
 
-    for (auto &F: *M) {
-        if (F.empty()) continue;
-        ThreadPool::get()->enqueue([this, DAA, &F, &LocalCFGMap](){
+    for (auto &F : *M) {
+        if (F.empty())
+            continue;
+        ThreadPool::get()->enqueue([this, DAA, &F, &LocalCFGMap]() {
             auto LocalCFG = std::make_shared<CFG>(&F);
             LocalCFGMap.at(&F) = LocalCFG;
             buildLocalVFG(DAA, LocalCFG.get(), &F);
@@ -48,33 +69,69 @@ DyckVFG::DyckVFG(DyckAliasAnalysis *DAA, DyckModRefAnalysis *DMRA, Module *M) {
 
     // connect local VFGs
     auto *DyckCG = DAA->getDyckCallGraph();
-    for (auto &F: *M) {
-        if (F.empty()) continue;
+    for (auto &F : *M) {
+        if (F.empty())
+            continue;
         auto *CtrlFlow = LocalCFGMap.at(&F).get();
         auto *CGNode = DyckCG->getFunction(&F);
-        if (!CGNode) continue;
-        for (auto &I: instructions(F)) {
+        if (!CGNode)
+            continue;
+        for (auto &I : instructions(F)) {
             auto *CI = dyn_cast<CallInst>(&I);
-            if (!CI) continue;
+            if (!CI)
+                continue;
             auto *TheCall = CGNode->getCall(CI);
             if (auto *CC = dyn_cast_or_null<CommonCall>(TheCall)) {
                 auto *Callee = dyn_cast<Function>(CC->getCalledFunction());
                 assert(Callee);
-                if (Callee->empty()) continue;
-                connect(DMRA, TheCall, Callee, CtrlFlow);
-            } else if (auto *PC = dyn_cast_or_null<PointerCall>(TheCall)) {
-                for (Function *Callee: *PC) {
-                    if (Callee->empty()) continue;
-                    connect(DMRA, TheCall, Callee, CtrlFlow);
+                if (Callee->empty() && Callee->arg_empty()) {
+                    continue;
+                }
+                connect(DAA, DMRA, TheCall, Callee, CtrlFlow);
+            }
+            else if (auto *PC = dyn_cast_or_null<PointerCall>(TheCall)) {
+                for (Function *Callee : *PC) {
+                    if (Callee->empty() && Callee->arg_empty())
+                        continue;
+                    connect(DAA, DMRA, TheCall, Callee, CtrlFlow);
                 }
             }
         }
     }
 }
 
+static void collectInst(Function &F, DyckAliasAnalysis *DAA, DyckModRefAnalysis *DMRA) {
+
+    DyckGraph *DG = DAA->getDyckGraph();
+    for (auto &Inst : instructions(F)) {
+        if (auto *Load = dyn_cast<LoadInst>(&Inst)) {
+            auto *Ptr = Load->getPointerOperand();
+            auto *DV = DG->findDyckVertex(Ptr);
+            if (DV)
+                FuncLoadMap[&F][DV].push_back(Load);
+        }
+        else if (auto *Store = dyn_cast<StoreInst>(&Inst)) {
+            auto *Ptr = Store->getPointerOperand();
+            auto *DV = DG->findDyckVertex(Ptr);
+            if (DV)
+                FuncStoreMap[&F][DV].push_back(Store);
+        }
+        else if (auto *InsertValue = dyn_cast<InsertValueInst>(&Inst)) {
+            auto *DV = DG->findDyckVertex(InsertValue);
+            if (DV)
+                FuncInsertValueMap[&F][DV].push_back(InsertValue);
+        }
+        else if (auto *ExtractValue = dyn_cast<ExtractValueInst>(&Inst)) {
+            auto *DV = DG->findDyckVertex(ExtractValue->getAggregateOperand());
+            if (DV)
+                FuncExtractValueMap[&F][DV].push_back(ExtractValue);
+        }
+    }
+}
+
 void DyckVFG::buildLocalVFG(Function &F) {
     // direct value flow through cast, gep-0-0, select, phi
-    for (auto &I: instructions(F)) {
+    for (auto &I : instructions(F)) {
         if (isa<CastInst>(I) || isa<PHINode>(I)) {
             auto *ToNode = getOrCreateVFGNode(&I);
             for (unsigned K = 0; K < I.getNumOperands(); ++K) {
@@ -82,17 +139,23 @@ void DyckVFG::buildLocalVFG(Function &F) {
                 auto *FromNode = getOrCreateVFGNode(From);
                 FromNode->addTarget(ToNode);
             }
-        } else if (isa<SelectInst>(I)) {
+        }
+        else if (isa<SelectInst>(I)) {
             auto *ToNode = getOrCreateVFGNode(&I);
             for (unsigned K = 1; K < I.getNumOperands(); ++K) {
                 auto *From = I.getOperand(K);
                 auto *FromNode = getOrCreateVFGNode(From);
                 FromNode->addTarget(ToNode);
             }
-        } else if (auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
+        }
+        else if (auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
             bool VF = true;
-            for (auto &Index: GEP->indices()) {
+            for (auto &Index : GEP->indices()) {
                 if (auto *CI = dyn_cast<ConstantInt>(&Index)) {
+                    // I = gep ptr, idx1, idx2 ... iff when all idx{i} are equal to zero, value of ptr flows into I.
+                    // In fact, the gep operation will genenrate a new value, but how can we track the alias realation of two
+                    // value generated by gep operation?
+                    // why not alias the two value in alias analysis ?
                     if (CI->getSExtValue() != 0) {
                         VF = false;
                         break;
@@ -104,12 +167,32 @@ void DyckVFG::buildLocalVFG(Function &F) {
                 auto *FromNode = getOrCreateVFGNode(GEP->getPointerOperand());
                 FromNode->addTarget(ToNode);
             }
-        } else if (isa<LoadInst>(I)) {
+        }
+        else if (isa<LoadInst>(I)) {
             getOrCreateVFGNode(&I);
             getOrCreateVFGNode(I.getOperand(0));
-        } else if(isa<StoreInst>(I)) {
+        }
+        else if (isa<StoreInst>(I)) {
             getOrCreateVFGNode(I.getOperand(0));
             getOrCreateVFGNode(I.getOperand(1));
+        }
+        else if (isa<InsertValueInst>(&I)) {
+            auto IVInst = dyn_cast<InsertValueInst>(&I);
+            auto AggValue = IVInst->getAggregateOperand();
+            if (!isa<UndefValue>(AggValue)) {
+                getOrCreateVFGNode(AggValue);
+            }
+            auto InvertValueOperand = IVInst->getInsertedValueOperand();
+            getOrCreateVFGNode(InvertValueOperand);
+            getOrCreateVFGNode(IVInst);
+        }
+        else if (isa<ExtractValueInst>(&I)) {
+            auto EVInst = dyn_cast<ExtractValueInst>(&I);
+            getOrCreateVFGNode(EVInst);
+            getOrCreateVFGNode(EVInst->getAggregateOperand());
+        }
+        else if(isa<CallInst>(&I) && API::isHeapAllocate(&I)){
+            getOrCreateVFGNode(&I);
         }
     }
 }
@@ -117,31 +200,23 @@ void DyckVFG::buildLocalVFG(Function &F) {
 void DyckVFG::buildLocalVFG(DyckAliasAnalysis *DAA, CFG *CtrlFlow, Function *F) const {
     // indirect value flow through load/store
     auto *DG = DAA->getDyckGraph();
-    std::map<DyckGraphNode *, std::vector<LoadInst *>> LoadMap; // ptr -> load
-    std::map<DyckGraphNode *, std::vector<StoreInst *>> StoreMap; // ptr -> store
-    for (auto &I: instructions(F)) {
-        if (auto *Load = dyn_cast<LoadInst>(&I)) {
-            auto *Ptr = Load->getPointerOperand();
-            auto *DV = DG->findDyckVertex(Ptr);
-            if (DV) LoadMap[DV].push_back(Load);
-        } else if (auto *Store = dyn_cast<StoreInst>(&I)) {
-            auto *Ptr = Store->getPointerOperand();
-            auto *DV = DG->findDyckVertex(Ptr);
-            if (DV) StoreMap[DV].push_back(Store);
-        }
-    }
+    std::map<DyckGraphNode *, std::vector<LoadInst *>> &LoadMap = FuncLoadMap[F];                         // ptr -> load
+    std::map<DyckGraphNode *, std::vector<StoreInst *>> &StoreMap = FuncStoreMap[F];                      // ptr -> store
+    std::map<DyckGraphNode *, std::vector<InsertValueInst *>> &InsertValueMap = FuncInsertValueMap[F];    // ptr -> InsertValue
+    std::map<DyckGraphNode *, std::vector<ExtractValueInst *>> &ExtractValueMap = FuncExtractValueMap[F]; // ptr -> ExtractValue
     // match load and store:
     // if alias(load's ptr, store's ptr) and store -> load in CFG, add store's value -> load's value in VFG
-    for (auto &LoadIt: LoadMap) {
+    for (auto &LoadIt : LoadMap) {
         auto *DyckNode = LoadIt.first;
         auto &Loads = LoadIt.second;
         auto StoreIt = StoreMap.find(DyckNode);
-        if (StoreIt == StoreMap.end()) continue;
+        if (StoreIt == StoreMap.end())
+            continue;
         auto &Stores = StoreIt->second;
-        for (auto *Load: Loads) {
+        for (auto *Load : Loads) {
             auto *LdNode = getVFGNode(Load);
             assert(LdNode);
-            for (auto *Store: Stores) {
+            for (auto *Store : Stores) {
                 if (CtrlFlow->reachable(Store, Load)) {
                     auto *StNode = getVFGNode(Store->getValueOperand());
                     assert(StNode);
@@ -150,15 +225,52 @@ void DyckVFG::buildLocalVFG(DyckAliasAnalysis *DAA, CFG *CtrlFlow, Function *F) 
             }
         }
     }
+
+    for (auto ExtractValueIt : ExtractValueMap) {
+        DyckGraphNode *DNode = ExtractValueIt.first;
+        auto &EVInstSet = ExtractValueIt.second;
+        auto InsertValueIt = InsertValueMap.find(DNode);
+        if (InsertValueIt == InsertValueMap.end())
+            continue;
+        auto &IVInstSet = InsertValueIt->second;
+        for (auto ExtractValue : EVInstSet) {
+            auto *ExtractNode = getVFGNode(ExtractValue);
+            assert(ExtractNode);
+            for (auto *InsertValue : IVInstSet) {
+                if (CtrlFlow->reachable(InsertValue, ExtractValue)) {
+                    bool AllIdxEq = true;
+                    bool AllIdxZero = true;
+                    if (ExtractValue->getNumIndices() != InsertValue->getNumIndices()) {
+                        AllIdxEq = false;
+                        for (auto i : ExtractValue->getIndices()) {
+                            AllIdxZero &= !!i;
+                        }
+                    }
+                    else {
+                        for (auto i = ExtractValue->getIndices().begin(), j = InsertValue->getIndices().begin();
+                             i != ExtractValue->getIndices().end() && j != InsertValue->getIndices().end(); i++, j++) {
+                            AllIdxEq &= (*i) == (*j);
+                        }
+                    }
+                    if (AllIdxEq || AllIdxZero) {
+                        auto *InsertNode = getVFGNode(InsertValue->getInsertedValueOperand());
+                        InsertNode->addTarget(ExtractNode);
+                    }
+                }
+            }
+        }
+    }
 }
 
 DyckVFG::~DyckVFG() {
-    for (auto &It: ValueNodeMap) delete It.second;
+    for (auto &It : ValueNodeMap)
+        delete It.second;
 }
 
 DyckVFGNode *DyckVFG::getVFGNode(Value *V) const {
     auto It = ValueNodeMap.find(V);
-    if (It == ValueNodeMap.end()) return nullptr;
+    if (It == ValueNodeMap.end())
+        return nullptr;
     return It->second;
 }
 
@@ -173,29 +285,77 @@ DyckVFGNode *DyckVFG::getOrCreateVFGNode(Value *V) {
 }
 
 static void collectValues(std::set<DyckGraphNode *>::iterator Begin, std::set<DyckGraphNode *>::iterator End,
-                          std::set<Value *> &CallerVals, std::set<Value *> &CalleeVals, Call *C, Function *Callee,
-                          CFG *Ctrl) {
+                          std::vector<std::set<Value *>> &CallerVals, std::vector<std::set<Value *>> &CalleeVals, Call *C,
+                          Function *Callee, CFG *Ctrl) {
     auto *Caller = C->getInstruction()->getFunction();
+    int Idx = 0;
     for (auto It = Begin; It != End; ++It) {
+        CalleeVals.emplace_back();
+        CallerVals.emplace_back();
         auto *N = *It;
-        auto *ValSet = (std::set<Value *> *) N->getEquivalentSet();
-        for (auto *V: *ValSet) {
+        auto *ValSet = (std::set<Value *> *)N->getEquivalentSet();
+        for (auto *V : *ValSet) {
             if (auto *Arg = dyn_cast<Argument>(V)) {
-                if (Arg->getParent() == Callee) CalleeVals.insert(Arg);
-                else if (Arg->getParent() == Caller) CallerVals.insert(Arg);
-            } else if (auto *Inst = dyn_cast<Instruction>(V)) {
-                if (Inst->getFunction() == Callee) CalleeVals.insert(Inst);
+                if (Arg->getParent() == Callee)
+                    CalleeVals[Idx].insert(Arg);
+                else if (Arg->getParent() == Caller)
+                    CallerVals[Idx].insert(Arg);
+            }
+            else if (auto *Inst = dyn_cast<Instruction>(V)) {
+                if (Inst->getFunction() == Callee)
+                    CalleeVals[Idx].insert(Inst);
                 else if (Inst->getFunction() == Caller && Ctrl->reachable(Inst, C->getInstruction()))
-                    CallerVals.insert(Inst);
+                    CallerVals[Idx].insert(Inst);
             }
         }
     }
 }
 
-void DyckVFG::connect(DyckModRefAnalysis *DMRA, Call *C, Function *Callee, CFG *Ctrl) {
+void DyckVFG::connectInsertExtractIndirectFlow(std::map<DyckGraphNode *, std::vector<ExtractValueInst *>> ExtractValueMap,
+                                               std::map<DyckGraphNode *, std::vector<InsertValueInst *>> InsertValueMap,
+                                               std::function<bool(Instruction *, Instruction *)> Reachable, int CallId) {
+    for (auto ExtractValueIt : ExtractValueMap) {
+        DyckGraphNode *DNode = ExtractValueIt.first;
+        auto &EVInstSet = ExtractValueIt.second;
+        auto InsertValueIt = InsertValueMap.find(DNode);
+        if (InsertValueIt == InsertValueMap.end())
+            continue;
+        auto &IVInstSet = InsertValueIt->second;
+        for (auto ExtractValue : EVInstSet) {
+            auto *ExtractNode = getVFGNode(ExtractValue);
+            assert(ExtractNode);
+            for (auto *InsertValue : IVInstSet) {
+                if (Reachable(InsertValue, ExtractValue)) {
+                    bool AllIdxEq = true;
+                    bool AllIdxZero = true;
+                    if (ExtractValue->getNumIndices() != InsertValue->getNumIndices()) {
+                        AllIdxEq = false;
+                        for (auto i : ExtractValue->getIndices()) {
+                            AllIdxZero &= !!i;
+                        }
+                    }
+                    else {
+                        for (auto i = ExtractValue->getIndices().begin(), j = InsertValue->getIndices().begin();
+                             i != ExtractValue->getIndices().end() && j != InsertValue->getIndices().end(); i++, j++) {
+                            AllIdxEq &= ((*i) == (*j));
+                            AllIdxZero &= (*i == 0 && *j == 0);
+                        }
+                    }
+                    if (AllIdxEq || AllIdxZero) {
+                        auto *InsertNode = getVFGNode(InsertValue->getInsertedValueOperand());
+                        InsertNode->addTarget(ExtractNode, CallId);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void DyckVFG::connect(DyckAliasAnalysis *DAA, DyckModRefAnalysis *DMRA, Call *C, Function *Callee, CFG *Ctrl) {
     // connect direct inputs
     for (unsigned K = 0; K < C->numArgs(); ++K) {
-        if (K >= Callee->arg_size()) continue; // ignore var args
+        if (K >= Callee->arg_size())
+            continue; // ignore var args
         auto *Actual = C->getArg(K);
         auto *ActualNode = getOrCreateVFGNode(Actual);
         auto *Formal = Callee->getArg(K);
@@ -205,42 +365,63 @@ void DyckVFG::connect(DyckModRefAnalysis *DMRA, Call *C, Function *Callee, CFG *
     // connect direct outputs
     if (!C->getInstruction()->getType()->isVoidTy()) {
         auto *ActualRet = getOrCreateVFGNode(C->getInstruction());
-        for (auto &Inst: instructions(Callee)) {
+        for (auto &Inst : instructions(Callee)) {
             auto *RetInst = dyn_cast<ReturnInst>(&Inst);
-            if (!RetInst) continue;
-            if (RetInst->getNumOperands() != 1) continue;
+            if (!RetInst)
+                continue;
+            if (RetInst->getNumOperands() != 1)
+                continue;
             auto *FormalRet = getOrCreateVFGNode(Inst.getOperand(0));
             FormalRet->addTarget(ActualRet, -C->id());
         }
     }
-
+    // if this function does not contain any basicblock
+    if (Callee->empty()) {
+        return;
+    }
     // this callee does not contain mod/refs except for formal parameters/rets
-    if (!DMRA->count(Callee)) return;
+    if (!DMRA->count(Callee))
+        return;
 
     // connect indirect inputs
     //  1. get refs, get ref values (in caller, C is reachable from these values, and callee)
     //  2. connect ref values (caller) -> ref values (callee)
-    std::set<Value *> RefCallerValues, RefCalleeValues;
+    std::vector<std::set<Value *>> RefCallerValues, RefCalleeValues;
     collectValues(DMRA->ref_begin(Callee), DMRA->ref_end(Callee), RefCallerValues, RefCalleeValues, C, Callee, Ctrl);
-    for (auto *CallerVal: RefCallerValues)
-        for (auto *CalleeVal: RefCalleeValues)
-            getOrCreateVFGNode(CallerVal)->addTarget(getOrCreateVFGNode(CalleeVal), C->id());
+    for (int i = 0; i < RefCalleeValues.size(); i++)
+        for (auto *CallerVal : RefCallerValues[i])
+            for (auto *CalleeVal : RefCalleeValues[i])
+                getOrCreateVFGNode(CallerVal)->addTarget(getOrCreateVFGNode(CalleeVal), C->id());
 
     // connect indirect outputs
     //  1. get mods, get mod values (in caller and callee)
     //  2. connect ref values (callee) -> ref values (caller)
-    std::set<Value *> ModCallerValues, ModCalleeValues;
+    std::vector<std::set<Value *>> ModCallerValues, ModCalleeValues;
     collectValues(DMRA->mod_begin(Callee), DMRA->mod_end(Callee), ModCallerValues, ModCalleeValues, C, Callee, Ctrl);
-    for (auto *CalleeVal: ModCalleeValues)
-        for (auto *CallerVal: ModCallerValues)
-            getOrCreateVFGNode(CalleeVal)->addTarget(getOrCreateVFGNode(CallerVal), -C->id());
+    for (int i = 0; i < RefCalleeValues.size(); i++)
+        for (auto *CalleeVal : ModCalleeValues[i])
+            for (auto *CallerVal : ModCallerValues[i])
+                getOrCreateVFGNode(CalleeVal)->addTarget(getOrCreateVFGNode(CallerVal), -C->id());
+    // connect indirect inputs through field accesses
+    auto I2CallSite = [&C, &Ctrl](Instruction *I, Instruction *E) -> bool { return Ctrl->reachable(I, C->getInstruction()); };
+    
+    connectInsertExtractIndirectFlow(FuncExtractValueMap[Callee], FuncInsertValueMap[C->getInstruction()->getFunction()],
+                                     I2CallSite, C->id());
+    // connect indirect outputs through filed accesses
+
+    auto CallSite2E = [&C, &Ctrl](Instruction *I, Instruction *E) -> bool { return Ctrl->reachable(C->getInstruction(), E); };
+
+    connectInsertExtractIndirectFlow(FuncExtractValueMap[C->getInstruction()->getFunction()], FuncInsertValueMap[Callee],
+                                     CallSite2E, -C->id());
 }
 
 Function *DyckVFGNode::getFunction() const {
-    if (!V) return nullptr;
+    if (!V)
+        return nullptr;
     if (auto *Arg = dyn_cast<Argument>(V)) {
         return Arg->getParent();
-    } else if (auto *Inst = dyn_cast<Instruction>(V)) {
+    }
+    else if (auto *Inst = dyn_cast<Instruction>(V)) {
         return Inst->getFunction();
     }
     return nullptr;

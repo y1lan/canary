@@ -1,12 +1,17 @@
 .idea
 cmake-build-*
 build
+test
+compile_commands.json
+.github
+.cache
 *.a
 *.o
 benchmarks/*.ll
 benchmarks/*/*.ll
 benchmarks/*/*/*.ll
 benchmarks/*/*/*/*.ll
+*.dot
 *.log
 *+Asserts
 nbproject

@@ -19,8 +19,9 @@
 #ifndef SUPPORT_API_H
 #define SUPPORT_API_H
 
+#include "llvm/IR/Argument.h"
 #include <llvm/IR/Instruction.h>
-
+#include <set>
 using namespace llvm;
 
 class API {
@@ -31,7 +32,9 @@ public:
 
     static bool isStackAllocate(Instruction *);
 
+    static bool isRustSinkForC(Argument *);
     static std::set<std::string> HeapAllocFunctions;
+    static std::map<std::string, int> RustSinkFunctionsForC;
 };
 
 #endif //SUPPORT_API_H

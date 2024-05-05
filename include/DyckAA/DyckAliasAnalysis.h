@@ -34,6 +34,7 @@
 
 using namespace llvm;
 
+extern bool PrintCSourceFunctions;
 class DyckAliasAnalysis : public ModulePass {
 private:
     DyckGraph *DyckPTG;
@@ -72,6 +73,12 @@ private:
     /// 3. The evaluation results will be output into "distribution.log"
     ///     The summary of the evaluation will be printed to the console
     void printAliasSetInformation();
+
+    /// Print the names of funcitons whose return variables is
+    /// alias of the variables which receives the return value from heap
+    /// allocated functions.
+    void printCSourceFunctions();
+    void readCSourceFunctions();
 };
 
 #endif // DYCKAA_DYCKALIASANALYSIS_H

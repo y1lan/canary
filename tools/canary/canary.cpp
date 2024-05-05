@@ -30,14 +30,17 @@
 #include <llvm/Support/Signals.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Transforms/Scalar.h>
+#include <llvm/Transforms/Scalar/SimplifyCFG.h>
 #include <llvm/Transforms/Utils.h>
 
 #include <memory>
 
+#include "MemoryLeak/MLDValueFlowAnalysis.h"
 #include "NullPointer/NullCheckAnalysis.h"
 #include "Support/RecursiveTimer.h"
 #include "Support/Statistics.h"
 #include "Transform/LowerConstantExpr.h"
+#include "llvm/Analysis/PostDominators.h"
 
 using namespace llvm;
 
@@ -98,17 +101,17 @@ int main(int argc, char **argv) {
 
     auto *TransformTimer = new RecursiveTimerPass("Transforming the bitcode");
     Passes.add(TransformTimer->start());
-    Passes.add(createLowerAtomicPass());
-    Passes.add(createLowerInvokePass());
-    Passes.add(createPromoteMemoryToRegisterPass());
-    Passes.add(createSCCPPass());
-    Passes.add(createLoopSimplifyPass());
+    // Passes.add(createLowerAtomicPass());
+    // Passes.add(createLowerInvokePass());
+    // Passes.add(createPromoteMemoryToRegisterPass());
+    // Passes.add(createSCCPPass());
+    // Passes.add(createLoopSimplifyPass());
     Passes.add(new LowerConstantExpr());
     Passes.add(TransformTimer->done());
     if (!OutputAssembly.getValue()) {
         auto *AnalysisTimer = new RecursiveTimerPass("Analyzing the bitcode");
         Passes.add(AnalysisTimer->start());
-        Passes.add(new NullCheckAnalysis());
+        Passes.add(new MLDValueFlowAnalysis());
         Passes.add(AnalysisTimer->done());
     }
 

@@ -20,6 +20,7 @@
 #include <llvm/IR/InstIterator.h>
 #include "AAAnalyzer.h"
 #include "Support/RecursiveTimer.h"
+#include "llvm/IR/Instructions.h"
 
 static cl::opt<unsigned> FunctionTypeCheckLevel("function-type-check-level", cl::init(4), cl::Hidden,
                                                 cl::desc("The level of checking the compatability of function types"
@@ -306,15 +307,15 @@ void AAAnalyzer::combineFunctionGroups(FunctionType *FTyX, FunctionType *FTyY) {
 
 DyckGraphNode *AAAnalyzer::addField(DyckGraphNode *Val, long FieldIndex, DyckGraphNode *Field) {
     if (!Field) {
-        auto *ValRepSet = Val->getOutVertices((void *) (CFLGraph->getOrInsertIndexEdgeLabel(FieldIndex)));
+        auto *ValRepSet = Val->getOutVertices((CFLGraph->getOrInsertIndexEdgeLabel(FieldIndex)));
         if (ValRepSet && !ValRepSet->empty()) {
             Field = *(ValRepSet->begin());
         } else {
             Field = CFLGraph->retrieveDyckVertex(nullptr).first;
-            Val->addTarget(Field, (void *) (CFLGraph->getOrInsertIndexEdgeLabel(FieldIndex)));
+            Val->addTarget(Field, (CFLGraph->getOrInsertIndexEdgeLabel(FieldIndex)));
         }
     } else {
-        Val->addTarget(Field, (void *) (CFLGraph->getOrInsertIndexEdgeLabel(FieldIndex)));
+        Val->addTarget(Field, (CFLGraph->getOrInsertIndexEdgeLabel(FieldIndex)));
     }
     return Field;
 }
@@ -372,12 +373,14 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
 
             // s2: ?3--deref-->?2
             auto FieldIdx = (unsigned) (*(CI->getValue().getRawData()));
+            if(FieldIdx == 0)
+                continue;
             DyckGraphNode *Field = this->addField(TheStruct, FieldIdx, nullptr);
             DyckGraphNode *FieldPtr = this->addPtrTo(nullptr, Field);
 
             // the label representation and feature impl is temporal.
             // s3: y--(fieldIdx offLabel)-->?3
-            Current->addTarget(FieldPtr, (void *) (CFLGraph->getOrInsertOffsetEdgeLabel(FieldIdx)));
+            Current->addTarget(FieldPtr, (CFLGraph->getOrInsertOffsetEdgeLabel(FieldIdx)));
 
             // update current
             Current = FieldPtr;
@@ -673,6 +676,7 @@ void AAAnalyzer::handleInst(Instruction *Inst, DyckCallGraphNode *Parent) {
         case Instruction::Ret: {
             ReturnInst *RetInst = ((ReturnInst *) Inst);
             if (RetInst->getNumOperands() > 0 && !RetInst->getOperandUse(0)->getType()->isVoidTy()) {
+                Parent->addRetBB(RetInst->getParent());
                 Parent->addRet(RetInst->getOperandUse(0));
             }
         }
