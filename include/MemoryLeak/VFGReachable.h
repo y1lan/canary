@@ -85,7 +85,9 @@ class VFGReachable {
             return Inst->getParent();
         }
         if (auto Arg = dyn_cast<Argument>(Val)) {
-            return &(Arg->getParent()->getEntryBlock());
+            if(!Arg->getParent()->isDeclaration()){
+                return &(Arg->getParent()->getEntryBlock());
+            }
         }
         return nullptr;
     }

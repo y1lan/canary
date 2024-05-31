@@ -26,12 +26,16 @@ void MLDValueFlowAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool MLDValueFlowAnalysis::runOnModule(llvm::Module &M) {
-    auto *DyckVFA = &getAnalysis<DyckValueFlowAnalysis>();
     auto *DyckAA = &getAnalysis<DyckAliasAnalysis>();
+    if(DyckAA->analysisC){
+        return false;
+    }
+    auto *DyckVFA = &getAnalysis<DyckValueFlowAnalysis>();
     DyckAA->getDyckCallGraph()->constructCallSiteMap();
     VFG = new MLDVFG(DyckVFA->getDyckVFGraph(), DyckAA->getDyckCallGraph());
     VFG->printVFG();
     VFGReachable VFGSolver(M, VFG, DyckAA);
+    
     VFGSolver.solveAllSlices();
     return false;
     ;

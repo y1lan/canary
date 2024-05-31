@@ -377,8 +377,11 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
 
             // s2: ?3--deref-->?2
             auto FieldIdx = (unsigned) (*(CI->getValue().getRawData()));
-            if(FieldIdx == 0)
+            if(FieldIdx == 0){
+                AggOrPointerTy = GTI.getIndexedType();
+                GTI++;
                 continue;
+            }
             DyckGraphNode *Field = this->addField(TheStruct, FieldIdx, nullptr);
             DyckGraphNode *FieldPtr = this->addPtrTo(nullptr, Field);
 

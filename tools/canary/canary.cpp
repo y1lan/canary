@@ -38,7 +38,6 @@
 #include <memory>
 
 #include "MemoryLeak/MLDValueFlowAnalysis.h"
-#include "NullPointer/NullCheckAnalysis.h"
 #include "Support/RecursiveTimer.h"
 #include "Support/Statistics.h"
 #include "Transform/LowerConstantExpr.h"
@@ -71,13 +70,13 @@ int main(int argc, char **argv) {
     // Initialize passes
     PassRegistry &Registry = *PassRegistry::getPassRegistry();
     initializeCore(Registry);
-    initializeCoroutines(Registry);
+    // initializeCoroutines(Registry);
     initializeScalarOpts(Registry);
     initializeIPO(Registry);
     initializeAnalysis(Registry);
     initializeTransformUtils(Registry);
     initializeInstCombine(Registry);
-    initializeAggressiveInstCombine(Registry);
+    // initializeAggressiveInstCombine(Registry);
     initializeTarget(Registry);
 
     cl::ParseCommandLineOptions(argc, argv, "Bona soundly checks if a pointer may be nullptr.\n");
@@ -95,27 +94,27 @@ int main(int argc, char **argv) {
         return 1;
     }
     else {
-        Statistics::run(*M);
+        // Statistics::run(*M);
         if (OnlyStatistics)
             return 0;
     }
 
     legacy::PassManager Passes;
 
-    auto *TransformTimer = new RecursiveTimerPass("Transforming the bitcode");
-    Passes.add(TransformTimer->start());
+    // auto *TransformTimer = new RecursiveTimerPass("Transforming the bitcode");
+    // Passes.add(TransformTimer->start());
     // Passes.add(createLowerAtomicPass());
     // Passes.add(createLowerInvokePass());
     // Passes.add(createPromoteMemoryToRegisterPass());
     // Passes.add(createSCCPPass());
     // Passes.add(createLoopSimplifyPass());
     Passes.add(new LowerConstantExpr());
-    Passes.add(TransformTimer->done());
+    // Passes.add(TransformTimer->done());
     if (!OutputAssembly.getValue()) {
-        auto *AnalysisTimer = new RecursiveTimerPass("Analyzing the bitcode");
-        Passes.add(AnalysisTimer->start());
+        // auto *AnalysisTimer = new RecursiveTimerPass("Analyzing the bitcode");
+        // Passes.add(AnalysisTimer->start());
         Passes.add(new MLDValueFlowAnalysis());
-        Passes.add(AnalysisTimer->done());
+        // Passes.add(AnalysisTimer->done());
     }
 
     std::unique_ptr<ToolOutputFile> Out;

@@ -42,7 +42,7 @@ private:
 
 public:
     static char ID;
-
+    bool analysisC = true;
     DyckAliasAnalysis();
 
     ~DyckAliasAnalysis() override;

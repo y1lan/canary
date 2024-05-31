@@ -27,11 +27,11 @@ static inline std::string Tab(unsigned N) {
 }
 
 RecursiveTimer::RecursiveTimer(const char *Prefix) : Begin(std::chrono::steady_clock::now()), Prefix(Prefix) {
-    outs() << Tab(DepthOfTimeRecorder++) << Prefix << "...\n";
+   // outs() << Tab(DepthOfTimeRecorder++) << Prefix << "...\n";
 }
 
 RecursiveTimer::RecursiveTimer(const std::string &Prefix) : Begin(std::chrono::steady_clock::now()), Prefix(Prefix) {
-    outs() << Tab(DepthOfTimeRecorder++) << Prefix << "...\n";
+    //outs() << Tab(DepthOfTimeRecorder++) << Prefix << "...\n";
 }
 
 RecursiveTimer::~RecursiveTimer() {
@@ -39,7 +39,7 @@ RecursiveTimer::~RecursiveTimer() {
     auto Milli = std::chrono::duration_cast<std::chrono::milliseconds>(End - Begin).count();
     auto Time = Milli > 1000 ? Milli / 1000 : Milli;
     auto Unit = Milli > 1000 ? "s" : "ms";
-    outs() << Tab(--DepthOfTimeRecorder) << Prefix << " takes " << Time << Unit << "!\n";
+    // outs() << Tab(--DepthOfTimeRecorder) << Prefix << " takes " << Time << Unit << "!\n";
 }
 
 char RecursiveTimerPass::ID = 0;
