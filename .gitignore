@@ -27,3 +27,5 @@ bin
 *~
 .cproject
 .project
+*.py
+*.sh
