@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
     // initializeAggressiveInstCombine(Registry);
     initializeTarget(Registry);
 
-    cl::ParseCommandLineOptions(argc, argv, "Bona soundly checks if a pointer may be nullptr.\n");
+    cl::ParseCommandLineOptions(argc, argv, "Bona soundly checks if there is memory leak in the rust programs.\n");
 
     SMDiagnostic Err;
     LLVMContext Context;
