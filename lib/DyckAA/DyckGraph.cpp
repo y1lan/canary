@@ -128,10 +128,11 @@ DyckGraphNode *DyckGraph::combine(DyckGraphNode *NodeX, DyckGraphNode *NodeY) {
     assert(Vertices.count(NodeX));
     assert(Vertices.count(NodeY));
     if (NodeX == NodeY) return NodeX;
-    if(PrintCSourceFunctions && (NodeX->isAliasOfHeapAlloc() || NodeY->isAliasOfHeapAlloc())){
-        NodeX->setAliasOfHeapAlloc();
-        NodeY->setAliasOfHeapAlloc();
-    }
+
+    // if(PrintCSourceFunctions && (NodeX->isAliasOfHeapAlloc() || NodeY->isAliasOfHeapAlloc())){
+    //     NodeX->setAliasOfHeapAlloc();
+    //     NodeY->setAliasOfHeapAlloc();
+    // }
     if (NodeX->degree() < NodeY->degree()) {
         DyckGraphNode *Temp = NodeX;
         NodeX = NodeY;
@@ -230,10 +231,10 @@ bool DyckGraph::qirunAlgorithm() {
             X = Y;
             Y = Temp;
         }
-        if(X->isAliasOfHeapAlloc() || Y->isAliasOfHeapAlloc()){
-            X->setAliasOfHeapAlloc();
-            Y->setAliasOfHeapAlloc();
-        }
+        // if(X->isAliasOfHeapAlloc() || Y->isAliasOfHeapAlloc()){
+        //     X->setAliasOfHeapAlloc();
+        //     Y->setAliasOfHeapAlloc();
+        // }
         //outs()<<"HERE0.3\n"; outs().flush();
         assert(X != Y);
         Vertices.erase(Y);
