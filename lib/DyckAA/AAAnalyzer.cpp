@@ -369,6 +369,7 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
         Value *Idx = GEP->getOperand(++IdxIdx);
         auto *CI = dyn_cast<ConstantInt>(Idx);
         if (AggOrPointerTy->isStructTy()) {
+            
             // example: gep y 0 constIdx
             // s1: y--deref-->?1--(fieldIdx idxLabel)-->?2
             DyckGraphNode *TheStruct = this->addPtrTo(Current, nullptr);
@@ -377,11 +378,11 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
 
             // s2: ?3--deref-->?2
             auto FieldIdx = (unsigned) (*(CI->getValue().getRawData()));
-            if(FieldIdx == 0){
-                AggOrPointerTy = GTI.getIndexedType();
-                GTI++;
-                continue;
-            }
+            // if(FieldIdx == 0){
+            //     AggOrPointerTy = GTI.getIndexedType();
+            //     GTI++;
+            //     continue;
+            // }
             DyckGraphNode *Field = this->addField(TheStruct, FieldIdx, nullptr);
             DyckGraphNode *FieldPtr = this->addPtrTo(nullptr, Field);
 
