@@ -26,17 +26,19 @@
 #include <llvm/InitializePasses.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/FileSystem.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/Signals.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/ToolOutputFile.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Scalar/SimplifyCFG.h>
 #include <llvm/Transforms/Utils.h>
-#include <llvm/Support/FileSystem.h>
-#include <llvm/Support/raw_ostream.h>
 #include <memory>
 
+#include "DyckAA/DyckAliasAnalysis.h"
+#include "MemoryLeak/MLDAllocationAnalysis.h"
 #include "MemoryLeak/MLDValueFlowAnalysis.h"
 #include "Support/RecursiveTimer.h"
 #include "Support/Statistics.h"
@@ -113,7 +115,12 @@ int main(int argc, char **argv) {
     if (!OutputAssembly.getValue()) {
         // auto *AnalysisTimer = new RecursiveTimerPass("Analyzing the bitcode");
         // Passes.add(AnalysisTimer->start());
-        Passes.add(new MLDValueFlowAnalysis());
+        if (PrintCSourceFunctions) {
+            Passes.add(new MLDAllocationAnalysis());
+        }
+        else {
+            Passes.add(new MLDValueFlowAnalysis());
+        }
         // Passes.add(AnalysisTimer->done());
     }
 
