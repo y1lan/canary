@@ -17,7 +17,7 @@
  */
 
 #include "DyckAA/DyckCallGraph.h"
-
+#include <iostream>
 static cl::opt<bool> WithEdgeLabels("with-labels", cl::init(false), cl::Hidden,
                                     cl::desc("Determine whether there are edge lables in the cg."));
 
@@ -224,4 +224,60 @@ void DyckCallGraph::printFunctionPointersInformation(const std::string &ModuleId
     }
 
     fclose(FOut);
+}
+
+std::ostream& operator<<(std::ostream &Out, DeclareFunctionDesc &DecFuncDesc) {
+    Out << DecFuncDesc.FunctionName << std::endl << DecFuncDesc.NumOfParameters << std::endl;
+    for (auto i : DecFuncDesc.IndexOfParameters) {
+        Out << i << " ";
+    }
+    Out << std::endl;
+    Out << DecFuncDesc.AliasGraphOfParameters.size() << std::endl;
+    for (auto edgeDesc : DecFuncDesc.AliasGraphOfParameters) {
+        Out << edgeDesc.StartIndex << " " << edgeDesc.EndIndex << " " << edgeDesc.LabelDesc << " ";
+    }
+    Out << std::endl;
+    Out << DecFuncDesc.AliasGraphOfReturns.size() << std::endl;
+    for (auto edgeDesc : DecFuncDesc.AliasGraphOfReturns) {
+        Out << edgeDesc.StartIndex << " " << edgeDesc.EndIndex << " " << edgeDesc.LabelDesc << " ";
+    }
+    Out << std::endl;
+    Out << DecFuncDesc.AllocationIndexes.size() << std::endl;
+    for (auto i : DecFuncDesc.AllocationIndexes) {
+        Out << i << " ";
+    }
+    Out << std::endl;
+    return Out;
+}
+std::istream& operator>>(std::istream& In, DeclareFunctionDesc &DecFuncDesc) {
+    In >> DecFuncDesc.FunctionName >> DecFuncDesc.NumOfParameters;
+    for (int i = 0; i < DecFuncDesc.NumOfParameters; i++){
+        int j = 0;
+        In >> j;
+        DecFuncDesc.IndexOfParameters.emplace_back(j);
+    }
+    size_t sizeOfAliasGraphOfParameters = 0;
+    In >> sizeOfAliasGraphOfParameters;
+    for (int i = 0; i < sizeOfAliasGraphOfParameters; i++){
+        int startIndex =0, endIndex = 0;
+        std::string labelDesc;
+        In >> startIndex >> endIndex >> labelDesc;
+        DecFuncDesc.AliasGraphOfParameters.emplace(startIndex, endIndex, labelDesc);
+    }
+    size_t sizeOfAliasGraphOfReturns = 0;
+    In >> sizeOfAliasGraphOfReturns;
+    for (int i = 0; i < sizeOfAliasGraphOfParameters; i++){
+        int startIndex =0, endIndex = 0;
+        std::string labelDesc;
+        In >> startIndex >> endIndex >> labelDesc;
+        DecFuncDesc.AliasGraphOfReturns.emplace(startIndex, endIndex, labelDesc);
+    }
+    size_t sizeOfAllocationIndexes = 0;
+    In >> sizeOfAllocationIndexes;
+    for(int i =0 ;i < sizeOfAllocationIndexes; i++){
+        int index = 0;
+        In >> index;
+        DecFuncDesc.AllocationIndexes.emplace(index);
+    }
+    return In;
 }

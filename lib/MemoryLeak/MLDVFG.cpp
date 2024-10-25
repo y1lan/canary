@@ -1,5 +1,7 @@
 #include "MemoryLeak/MLDVFG.h"
 // #include "DyckAA/DyckGraphNode.h"
+#include "DyckAA/DyckAliasAnalysis.h"
+#include "DyckAA/DyckCallGraph.h"
 #include "DyckAA/DyckVFG.h"
 #include "Support/API.h"
 #include "llvm/IR/Argument.h"
@@ -13,15 +15,40 @@
 #include <system_error>
 #include <utility>
 
+
+// This function is used to construct MLD VFG
 MLDVFG::MLDVFG(DyckVFG *VFG, DyckCallGraph *DyckCG)
     : VFG(VFG),
-      DyckCG(DyckCG) {
+      DyckCG(DyckCG),
+      DyckAA(nullptr) {
     for (auto VFGNodeIt = VFG->node_begin(); VFGNodeIt != VFG->node_end(); VFGNodeIt++) {
         if (isa<Instruction>((*VFGNodeIt)->getValue()) && API::isHeapAllocate((Instruction *)(*VFGNodeIt)->getValue())) {
             SourcesSet.insert(*VFGNodeIt);
             ForwardReachable(*VFGNodeIt);
             BackwardReachable(*VFGNodeIt);
             // printSlice(LeakMap[*VFGNodeIt]);
+        }
+    }
+}
+
+// This function is used to construct allocation notation VFG.
+MLDVFG::MLDVFG(DyckVFG *VFG, DyckCallGraph *DyckCG, DyckAliasAnalysis *DyckAA)
+    :VFG(VFG), DyckCG(DyckCG), DyckAA(DyckAA){
+    for (auto VFGNodeIt = VFG->node_begin(); VFGNodeIt != VFG->node_end(); VFGNodeIt++) {
+        if (isa<Instruction>((*VFGNodeIt)->getValue()) && API::isHeapAllocate((Instruction *)(*VFGNodeIt)->getValue())) {
+            SourcesSet.insert(*VFGNodeIt);
+            ForwardReachable(*VFGNodeIt);
+        }
+    }
+    for (auto &sourceSlicePair:LeakMap){
+        Slice & sourceSlice = sourceSlicePair.second;
+        for (auto sourceNodeIt = sourceSlice.reach_begin();sourceNodeIt != sourceSlice.reach_end(); sourceNodeIt++){
+            DyckVFGNode * sourceNode = (*sourceNodeIt);
+            auto dyckNodeReturnCodePair = DyckAA->getDyckGraph()->retrieveDyckVertex( sourceNode->getValue());
+            DyckGraphNode* sourceAliasNode  =  dyckNodeReturnCodePair.first;
+            if (sourceAliasNode != nullptr){
+                sourceAliasNode->setAliasOfHeapAlloc();
+            }
         }
     }
 }
