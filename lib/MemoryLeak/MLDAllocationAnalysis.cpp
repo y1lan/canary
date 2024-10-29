@@ -12,6 +12,7 @@
 #include "MemoryLeak/MLDValueFlowAnalysis.h"
 #include <cassert>
 #include <fstream>
+#include <iostream>
 #include <llvm/IR/Argument.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Module.h>
@@ -37,6 +38,7 @@ void MLDAllocationAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool MLDAllocationAnalysis::runOnModule(llvm::Module &M) {
+    std::cout << "executed to here" << std::endl;
     auto *DyckAA = &getAnalysis<DyckAliasAnalysis>();
     auto *DyckVFG = &getAnalysis<DyckValueFlowAnalysis>();
     DyckAA->getDyckCallGraph()->constructCallSiteMap();
@@ -44,9 +46,9 @@ bool MLDAllocationAnalysis::runOnModule(llvm::Module &M) {
     // can reach
     MLDVFG *VFG = new MLDVFG(DyckVFG->getDyckVFGraph(), DyckAA->getDyckCallGraph(), DyckAA);
     std::vector<DeclareFunctionDesc> funcDescVec = collectFunctionDescription(M, DyckAA);
-    assert(PrintCSourceFunctions);
-    std::fstream out_stream(PrintCSourceFunctionsFileName);
-    for (DeclareFunctionDesc desc :funcDescVec){
+    assert(!PrintCSourceFunctions.getValue().empty());
+    std::fstream out_stream(PrintCSourceFunctions.getValue());
+    for (DeclareFunctionDesc desc : funcDescVec) {
         out_stream << desc;
     }
     out_stream.close();
@@ -60,6 +62,7 @@ std::vector<DeclareFunctionDesc> MLDAllocationAnalysis::collectFunctionDescripti
         std::set<int> allocationIndexes;
         std::set<AliasNodeEdgeDesc> paramEdgeSet;
         std::vector<int> indexOfParameters;
+        std::vector<int> indexOfReturns;
         for (auto argIt = func.arg_begin(); argIt != func.arg_end(); argIt++) {
             DyckGraphNode *start = DyckAA->getDyckGraph()->retrieveDyckVertex(dyn_cast<Value>(argIt)).first;
             indexOfParameters.push_back(start->getIndex());
@@ -70,11 +73,15 @@ std::vector<DeclareFunctionDesc> MLDAllocationAnalysis::collectFunctionDescripti
         DyckCallGraphNode *CGNode = DyckAA->getDyckCallGraph()->getFunction(&func);
         for (auto retIt = CGNode->getReturns().begin(); retIt != CGNode->getReturns().end(); retIt++) {
             DyckGraphNode *start = DyckAA->getDyckGraph()->retrieveDyckVertex(*retIt).first;
+            indexOfReturns.push_back(start->getIndex());
             std::set<int> visited;
             dfsearchAllocationSiteReached(start, DyckAA->getDyckGraph(), 20, visited, retEdgeSet, allocationIndexes);
         }
-        funcDescVec.push_back({func.getName().str(), static_cast<int>(func.arg_size()), indexOfParameters, paramEdgeSet,
-                               retEdgeSet, allocationIndexes});
+        if (allocationIndexes.empty()) {
+            continue;
+        }
+        funcDescVec.push_back({func.getName().str(), static_cast<int>(func.arg_size()), indexOfParameters, indexOfReturns,
+                               paramEdgeSet, retEdgeSet, allocationIndexes});
     }
     return funcDescVec;
 }
@@ -107,5 +114,74 @@ bool MLDAllocationAnalysis::dfsearchAllocationSiteReached(DyckGraphNode *Start, 
         }
     }
     Visited.erase(Start->getIndex());
-    return true;
+    return ret;
+}
+std::ostream &operator<<(std::ostream &Out, DeclareFunctionDesc &DecFuncDesc) {
+    Out << DecFuncDesc.FunctionName << std::endl << DecFuncDesc.IndexOfParameters.size() << std::endl;
+    for (auto i : DecFuncDesc.IndexOfParameters) {
+        Out << i << " ";
+    }
+    Out << std::endl;
+    Out << DecFuncDesc.IndexOfReturns.size() << std::endl;
+
+    for (auto i : DecFuncDesc.IndexOfReturns) {
+        Out << i << " ";
+    }
+    Out << std::endl;
+    Out << DecFuncDesc.AliasGraphOfParameters.size() << std::endl;
+    for (auto edgeDesc : DecFuncDesc.AliasGraphOfParameters) {
+        Out << edgeDesc.StartIndex << " " << edgeDesc.EndIndex << " " << edgeDesc.LabelDesc << " ";
+    }
+    Out << std::endl;
+    Out << DecFuncDesc.AliasGraphOfReturns.size() << std::endl;
+    for (auto edgeDesc : DecFuncDesc.AliasGraphOfReturns) {
+        Out << edgeDesc.StartIndex << " " << edgeDesc.EndIndex << " " << edgeDesc.LabelDesc << " ";
+    }
+    Out << std::endl;
+    Out << DecFuncDesc.AllocationIndexes.size() << std::endl;
+    for (auto i : DecFuncDesc.AllocationIndexes) {
+        Out << i << " ";
+    }
+    Out << std::endl;
+    return Out;
+}
+std::istream &operator>>(std::istream &In, DeclareFunctionDesc &DecFuncDesc) {
+    int numOfParameters;
+    In >> DecFuncDesc.FunctionName >> numOfParameters;
+    for (int i = 0; i < numOfParameters; i++) {
+        int j = 0;
+        In >> j;
+        DecFuncDesc.IndexOfParameters.emplace_back(j);
+    }
+    int numOfReturns;
+    In >> numOfReturns;
+    for (int i = 0; i < numOfReturns; i++) {
+        int j = 0;
+        In >> j;
+        DecFuncDesc.IndexOfReturns.emplace_back(j);
+    }
+    size_t sizeOfAliasGraphOfParameters = 0;
+    In >> sizeOfAliasGraphOfParameters;
+    for (int i = 0; i < sizeOfAliasGraphOfParameters; i++) {
+        int startIndex = 0, endIndex = 0;
+        std::string labelDesc;
+        In >> startIndex >> endIndex >> labelDesc;
+        DecFuncDesc.AliasGraphOfParameters.emplace(startIndex, endIndex, labelDesc);
+    }
+    size_t sizeOfAliasGraphOfReturns = 0;
+    In >> sizeOfAliasGraphOfReturns;
+    for (int i = 0; i < sizeOfAliasGraphOfParameters; i++) {
+        int startIndex = 0, endIndex = 0;
+        std::string labelDesc;
+        In >> startIndex >> endIndex >> labelDesc;
+        DecFuncDesc.AliasGraphOfReturns.emplace(startIndex, endIndex, labelDesc);
+    }
+    size_t sizeOfAllocationIndexes = 0;
+    In >> sizeOfAllocationIndexes;
+    for (int i = 0; i < sizeOfAllocationIndexes; i++) {
+        int index = 0;
+        In >> index;
+        DecFuncDesc.AllocationIndexes.emplace(index);
+    }
+    return In;
 }
