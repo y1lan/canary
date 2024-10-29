@@ -38,6 +38,7 @@ MLDVFG::MLDVFG(DyckVFG *VFG, DyckCallGraph *DyckCG, DyckAliasAnalysis *DyckAA)
         if (isa<Instruction>((*VFGNodeIt)->getValue()) && API::isHeapAllocate((Instruction *)(*VFGNodeIt)->getValue())) {
             SourcesSet.insert(*VFGNodeIt);
             ForwardReachable(*VFGNodeIt);
+            printSlice(LeakMap[*VFGNodeIt]);
         }
     }
     for (auto &sourceSlicePair:LeakMap){
