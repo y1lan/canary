@@ -48,44 +48,6 @@ using namespace llvm;
 
 typedef std::map<Function *, DyckCallGraphNode *> FunctionMapTy;
 typedef std::map<int, const Call *> CallSiteMapTy;
-/// Function description for initializing arguments and return value of declared functions.
-struct AliasNodeEdgeDesc {
-    int StartIndex;
-    int EndIndex;
-    std::string LabelDesc;
-    AliasNodeEdgeDesc(int StartIndex, int EndIndex, std::string LabelDesc):StartIndex(StartIndex), EndIndex(EndIndex), LabelDesc(LabelDesc){}
-    bool operator<(const AliasNodeEdgeDesc other)const {
-        bool result = this->StartIndex < other.StartIndex; 
-        if (! result){
-            result = this->EndIndex < other.EndIndex;
-        }
-        if(! result){
-            result = this->LabelDesc < other.LabelDesc;
-        }
-        return result;
-    }
-};
-struct DeclareFunctionDesc {
-
-    std::string FunctionName;
-    int NumOfParameters;
-    std::vector<int> IndexOfParameters;
-    std::set<AliasNodeEdgeDesc> AliasGraphOfParameters;
-    std::set<AliasNodeEdgeDesc> AliasGraphOfReturns;
-    std::set<int> AllocationIndexes;
-    DeclareFunctionDesc(std::string FunctionName, int NumOfParameters, std::vector<int> IndexOfParameters,
-                        std::set<AliasNodeEdgeDesc> AliasGraphOfParameters, std::set<AliasNodeEdgeDesc> AliasGraphOfReturns,
-                        std::set<int> AllocationIndexes)
-        : FunctionName(FunctionName),
-          NumOfParameters(NumOfParameters),
-          IndexOfParameters(IndexOfParameters),
-          AliasGraphOfParameters(AliasGraphOfParameters),
-          AliasGraphOfReturns(AliasGraphOfReturns),
-          AllocationIndexes(AllocationIndexes) {}
-    friend std::ostream& operator<<(std::ostream&, DeclareFunctionDesc &);
-    friend std::istream& operator>>(std::istream&, DeclareFunctionDesc &);
-};
-
 class DyckCallGraph {
 private:
     /// function -> call graph node

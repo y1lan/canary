@@ -34,7 +34,9 @@
 
 using namespace llvm;
 
-extern bool PrintCSourceFunctions;
+
+extern cl::opt<std::string> PrintCSourceFunctions;
+extern cl::opt<std::string> CSourceFunctions;
 class DyckAliasAnalysis : public ModulePass {
 private:
     DyckGraph *DyckPTG;
