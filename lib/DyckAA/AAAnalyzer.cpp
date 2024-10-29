@@ -388,11 +388,13 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
 
             // the label representation and feature impl is temporal.
             // s3: y--(fieldIdx offLabel)-->?3
+            // here is still field sensitive. 
             Current->addTarget(FieldPtr, (CFLGraph->getOrInsertOffsetEdgeLabel(FieldIdx)));
 
             // update current
             Current = FieldPtr;
         } else if (AggOrPointerTy->isPointerTy() || AggOrPointerTy->isArrayTy() || AggOrPointerTy->isVectorTy()) {
+            // If it is a pointer type, then Current variables would not change and return back to join alias.
             if (!CI)
                 wrapValue(Idx);
         } else {
