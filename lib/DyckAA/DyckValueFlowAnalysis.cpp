@@ -20,6 +20,7 @@
 #include "DyckAA/DyckModRefAnalysis.h"
 #include "DyckAA/DyckValueFlowAnalysis.h"
 #include "Support/RecursiveTimer.h"
+#include <iostream>
 
 char DyckValueFlowAnalysis::ID = 0;
 static RegisterPass<DyckValueFlowAnalysis> X("dyckvfa", "vfa based on the unification based alias analysis");
@@ -46,6 +47,9 @@ bool DyckValueFlowAnalysis::runOnModule(Module &M) {
     RecursiveTimer DyckVFA("Running DyckVFA");
     auto *DyckAA = &getAnalysis<DyckAliasAnalysis>();
     auto *DyckMRA = &getAnalysis<DyckModRefAnalysis>();
+    // if(DyckAA->analysisC){
+    //   return false;
+    // }
     VFG = new DyckVFG(DyckAA, DyckMRA, &M);
     return false;
 }

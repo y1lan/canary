@@ -1,40 +1,40 @@
-set(LLVM_LINK_COMPONENTS
-        LLVMAggressiveInstCombine
-        LLVMAnalysis
-        LLVMAsmParser
-        LLVMAsmPrinter
-        LLVMBinaryFormat
-        LLVMBitReader
-        LLVMBitWriter
-        LLVMBitstreamReader
-        LLVMCodeGen
-        LLVMCore
-        LLVMCoroutines
-        LLVMDemangle
-        LLVMFrontendOpenMP
-        LLVMIRReader
-        LLVMInstCombine
-        LLVMInstrumentation
-        LLVMLTO
-        LLVMLinker
-        LLVMMC
-        LLVMMCParser
-        LLVMMIRParser
-        LLVMObject
-        LLVMObjectYAML
-        LLVMOption
-        LLVMPasses
-        LLVMProfileData
-        LLVMRemarks
-        LLVMScalarOpts
-        LLVMSupport
-        LLVMTarget
-        LLVMTransformUtils
-        LLVMVectorize
-        LLVMipo
-)
+# set(LLVM_LINK_COMPONENTS
+#         LLVMAggressiveInstCombine
+#         LLVMAnalysis
+#         LLVMAsmParser
+#         LLVMAsmPrinter
+#         LLVMBinaryFormat
+#         LLVMBitReader
+#         LLVMBitWriter
+#         LLVMBitstreamReader
+#         LLVMCodeGen
+#         LLVMCore
+#         LLVMCoroutines
+#         LLVMDemangle
+#         LLVMFrontendOpenMP
+#         LLVMIRReader
+#         LLVMInstCombine
+#         LLVMInstrumentation
+#         LLVMLTO
+#         LLVMLinker
+#         LLVMMC
+#         LLVMMCParser
+#         LLVMMIRParser
+#         LLVMObject
+#         LLVMObjectYAML
+#         LLVMOption
+#         LLVMPasses
+#         LLVMProfileData
+#         LLVMRemarks
+#         LLVMScalarOpts
+#         LLVMSupport
+#         LLVMTarget
+#         LLVMTransformUtils
+#         LLVMVectorize
+#         LLVMipo
+# )
 
-
+execute_process(COMMAND ${LLVMCONFIG} --libs OUTPUT_VARIABLE LLVM_LINK_COMPONENTS OUTPUT_STRIP_TRAILING_WHITESPACE)
 add_executable(canary canary.cpp)
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
         target_link_libraries(canary PRIVATE

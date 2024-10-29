@@ -27,3 +27,6 @@ bin
 *~
 .cproject
 .project
+*.py
+*.sh
+.vscode

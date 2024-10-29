@@ -19,18 +19,20 @@
 #ifndef DYCKAA_AAANALYZER_H
 #define DYCKAA_AAANALYZER_H
 
-#include <llvm/Pass.h>
+#include <cstddef>
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <llvm/IR/GetElementPtrTypeIterator.h>
-#include <llvm/Support/raw_ostream.h>
+#include <llvm/IR/InlineAsm.h>
+#include <llvm/Pass.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/Debug.h>
-#include <llvm/IR/InlineAsm.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/raw_ostream.h>
 #include <map>
 #include <set>
 #include <unordered_map>
+#include <vector>
 
 #include "DyckAA/DyckCallGraph.h"
 #include "DyckAA/DyckGraph.h"
@@ -116,4 +118,3 @@ private:
 };
 
 #endif // DYCKAA_AAANALYZER_H
-

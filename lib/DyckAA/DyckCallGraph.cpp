@@ -17,7 +17,7 @@
  */
 
 #include "DyckAA/DyckCallGraph.h"
-
+#include <iostream>
 static cl::opt<bool> WithEdgeLabels("with-labels", cl::init(false), cl::Hidden,
                                     cl::desc("Determine whether there are edge lables in the cg."));
 

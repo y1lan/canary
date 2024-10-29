@@ -1,5 +1,6 @@
 #ifndef MEMORYLEAK_MLDVFG_H
 #define MEMORYLEAK_MLDVFG_H
+#include "DyckAA/DyckAliasAnalysis.h"
 #include "DyckAA/DyckCallGraph.h"
 #include "DyckAA/DyckGraphNode.h"
 #include "DyckAA/DyckVFG.h"
@@ -65,6 +66,7 @@ class Slice {
 class MLDVFG {
     DyckVFG *VFG;
     DyckCallGraph *DyckCG;
+    DyckAliasAnalysis *DyckAA;
     std::map<DyckVFGNode *, Slice> LeakMap;
     std::set<DyckVFGNode *> SourcesSet;
     void ForwardReachable(DyckVFGNode *);
@@ -114,6 +116,7 @@ class MLDVFG {
 
   public:
     MLDVFG(DyckVFG *VFG, DyckCallGraph *DyckCG);
+    MLDVFG(DyckVFG *VFG, DyckCallGraph *DyckCG, DyckAliasAnalysis *DyckAA);
 
     std::map<DyckVFGNode *, Slice>::iterator begin() {
         return LeakMap.begin();

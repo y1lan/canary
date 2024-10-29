@@ -24,19 +24,22 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/InitializePasses.h>
-#include <llvm/Support/Debug.h>
-#include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/Debug.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/Signals.h>
+#include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/ToolOutputFile.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Scalar/SimplifyCFG.h>
 #include <llvm/Transforms/Utils.h>
-
 #include <memory>
 
+#include "DyckAA/DyckAliasAnalysis.h"
+#include "MemoryLeak/MLDAllocationAnalysis.h"
 #include "MemoryLeak/MLDValueFlowAnalysis.h"
-#include "NullPointer/NullCheckAnalysis.h"
 #include "Support/RecursiveTimer.h"
 #include "Support/Statistics.h"
 #include "Transform/LowerConstantExpr.h"
@@ -44,11 +47,10 @@
 
 using namespace llvm;
 
-static cl::opt<std::string> InputFilename(cl::Positional, cl::desc("<input bitcode file>"),
-                                          cl::init("-"), cl::value_desc("filename"));
+static cl::opt<std::string> InputFilename(cl::Positional, cl::desc("<input bitcode file>"), cl::init("-"),
+                                          cl::value_desc("filename"));
 
-static cl::opt<std::string> OutputFilename("o", cl::desc("<output bitcode file>"),
-                                           cl::init(""), cl::value_desc("filename"));
+static cl::opt<std::string> OutputFilename("o", cl::desc("<output bitcode file>"), cl::init(""), cl::value_desc("filename"));
 
 static cl::opt<bool> OutputAssembly("S", cl::desc("Write output as LLVM assembly"), cl::init(false));
 
@@ -70,16 +72,16 @@ int main(int argc, char **argv) {
     // Initialize passes
     PassRegistry &Registry = *PassRegistry::getPassRegistry();
     initializeCore(Registry);
-    initializeCoroutines(Registry);
+    // initializeCoroutines(Registry);
     initializeScalarOpts(Registry);
     initializeIPO(Registry);
     initializeAnalysis(Registry);
     initializeTransformUtils(Registry);
     initializeInstCombine(Registry);
-    initializeAggressiveInstCombine(Registry);
+    // initializeAggressiveInstCombine(Registry);
     initializeTarget(Registry);
 
-    cl::ParseCommandLineOptions(argc, argv, "Bona soundly checks if a pointer may be nullptr.\n");
+    cl::ParseCommandLineOptions(argc, argv, "Bona soundly checks if there is memory leak in the rust programs.\n");
 
     SMDiagnostic Err;
     LLVMContext Context;
@@ -92,33 +94,40 @@ int main(int argc, char **argv) {
     if (verifyModule(*M, &errs())) {
         errs() << argv[0] << ": error: input module is broken!\n";
         return 1;
-    } else {
-        Statistics::run(*M);
-        if (OnlyStatistics) return 0;
+    }
+    else {
+        // Statistics::run(*M);
+        if (OnlyStatistics)
+            return 0;
     }
 
     legacy::PassManager Passes;
 
-    auto *TransformTimer = new RecursiveTimerPass("Transforming the bitcode");
-    Passes.add(TransformTimer->start());
+    // auto *TransformTimer = new RecursiveTimerPass("Transforming the bitcode");
+    // Passes.add(TransformTimer->start());
     // Passes.add(createLowerAtomicPass());
     // Passes.add(createLowerInvokePass());
     // Passes.add(createPromoteMemoryToRegisterPass());
     // Passes.add(createSCCPPass());
     // Passes.add(createLoopSimplifyPass());
     Passes.add(new LowerConstantExpr());
-    Passes.add(TransformTimer->done());
+    // Passes.add(TransformTimer->done());
     if (!OutputAssembly.getValue()) {
-        auto *AnalysisTimer = new RecursiveTimerPass("Analyzing the bitcode");
-        Passes.add(AnalysisTimer->start());
-        Passes.add(new MLDValueFlowAnalysis());
-        Passes.add(AnalysisTimer->done());
+        // auto *AnalysisTimer = new RecursiveTimerPass("Analyzing the bitcode");
+        // Passes.add(AnalysisTimer->start());
+        if (PrintCSourceFunctions) {
+            Passes.add(new MLDAllocationAnalysis());
+        }
+        else {
+            Passes.add(new MLDValueFlowAnalysis());
+        }
+        // Passes.add(AnalysisTimer->done());
     }
 
     std::unique_ptr<ToolOutputFile> Out;
     if (!OutputFilename.getValue().empty()) {
         std::error_code EC;
-        Out = std::make_unique<ToolOutputFile>(OutputFilename, EC, sys::fs::F_None);
+        Out = std::make_unique<ToolOutputFile>(OutputFilename, EC, sys::fs::OpenFlags::OF_None);
         if (EC) {
             errs() << EC.message() << '\n';
             return 1;
@@ -126,14 +135,16 @@ int main(int argc, char **argv) {
 
         if (OutputAssembly.getValue()) {
             Passes.add(createPrintModulePass(Out->os()));
-        } else {
+        }
+        else {
             Passes.add(createBitcodeWriterPass(Out->os()));
         }
     }
 
     Passes.run(*M);
 
-    if (Out) Out->keep();
+    if (Out)
+        Out->keep();
 
     return 0;
 }

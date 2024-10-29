@@ -29,15 +29,17 @@
 #include <llvm/Analysis/Passes.h>
 #include <llvm/Analysis/ValueTracking.h>
 #include <llvm/IR/GetElementPtrTypeIterator.h>
+#include <llvm/IR/Metadata.h>
 #include <llvm/Pass.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 
-#include <set>
-#include <map>
-#include <vector>
 #include <cstdio>
+#include <map>
+#include <ostream>
+#include <set>
+#include <vector>
 
 #include "DyckAA/DyckCallGraphNode.h"
 #include "Support/MapIterators.h"
@@ -61,31 +63,46 @@ public:
 
     ~DyckCallGraph();
 
-    FunctionMapTy::iterator begin() { return FunctionMap.begin(); }
+    FunctionMapTy::iterator begin() {
+        return FunctionMap.begin();
+    }
 
-    FunctionMapTy::iterator end() { return FunctionMap.end(); }
+    FunctionMapTy::iterator end() {
+        return FunctionMap.end();
+    }
 
-    value_iterator<FunctionMapTy::iterator> nodes_begin() { return {FunctionMap.begin()}; }
+    value_iterator<FunctionMapTy::iterator> nodes_begin() {
+        return {FunctionMap.begin()};
+    }
 
-    value_iterator<FunctionMapTy::iterator> nodes_end() { return {FunctionMap.end()}; }
+    value_iterator<FunctionMapTy::iterator> nodes_end() {
+        return {FunctionMap.end()};
+    }
 
-    value_iterator<FunctionMapTy::const_iterator> nodes_begin() const { return {FunctionMap.begin()}; }
+    value_iterator<FunctionMapTy::const_iterator> nodes_begin() const {
+        return {FunctionMap.begin()};
+    }
 
-    value_iterator<FunctionMapTy::const_iterator> nodes_end() const { return {FunctionMap.end()}; }
+    value_iterator<FunctionMapTy::const_iterator> nodes_end() const {
+        return {FunctionMap.end()};
+    }
 
-    size_t size() const { return FunctionMap.size(); }
+    size_t size() const {
+        return FunctionMap.size();
+    }
 
     DyckCallGraphNode *getOrInsertFunction(Function *);
 
     DyckCallGraphNode *getFunction(Function *) const;
 
     void constructCallSiteMap();
-    const Call*getCallSite(int id) {return CallSiteMap[id];}
+    const Call *getCallSite(int id) {
+        return CallSiteMap[id];
+    }
 
     void dotCallGraph(const std::string &ModuleIdentifier);
 
     void printFunctionPointersInformation(const std::string &ModuleIdentifier);
-
 };
 
 //===----------------------------------------------------------------------===//
@@ -93,59 +110,85 @@ public:
 // graphs by generic graph algorithms.
 //
 namespace llvm {
-    template<>
-    struct GraphTraits<DyckCallGraphNode *> {
-        using NodeRef = DyckCallGraphNode *;
-        using ChildIteratorType = pair_value_iterator<CallRecordVecTy::iterator, DyckCallGraphNode *>;
+template <> struct GraphTraits<DyckCallGraphNode *> {
+    using NodeRef = DyckCallGraphNode *;
+    using ChildIteratorType = pair_value_iterator<CallRecordVecTy::iterator, DyckCallGraphNode *>;
 
-        static NodeRef getEntryNode(DyckCallGraphNode *CGN) { return CGN; }
+    static NodeRef getEntryNode(DyckCallGraphNode *CGN) {
+        return CGN;
+    }
 
-        static ChildIteratorType child_begin(NodeRef N) { return N->child_begin(); }
+    static ChildIteratorType child_begin(NodeRef N) {
+        return N->child_begin();
+    }
 
-        static ChildIteratorType child_end(NodeRef N) { return N->child_end(); }
-    };
+    static ChildIteratorType child_end(NodeRef N) {
+        return N->child_end();
+    }
+};
 
-    template<>
-    struct GraphTraits<const DyckCallGraphNode *> {
-        using NodeRef = const DyckCallGraphNode *;
-        using EdgeRef = const CallRecordTy &;
-        using ChildIteratorType = pair_value_iterator<CallRecordVecTy::const_iterator, DyckCallGraphNode *>;
-        using ChildEdgeIteratorType = CallRecordVecTy::const_iterator;
+template <> struct GraphTraits<const DyckCallGraphNode *> {
+    using NodeRef = const DyckCallGraphNode *;
+    using EdgeRef = const CallRecordTy &;
+    using ChildIteratorType = pair_value_iterator<CallRecordVecTy::const_iterator, DyckCallGraphNode *>;
+    using ChildEdgeIteratorType = CallRecordVecTy::const_iterator;
 
-        static NodeRef getEntryNode(const DyckCallGraphNode *CGN) { return CGN; }
+    static NodeRef getEntryNode(const DyckCallGraphNode *CGN) {
+        return CGN;
+    }
 
-        static ChildIteratorType child_begin(NodeRef N) { return N->child_begin(); }
+    static ChildIteratorType child_begin(NodeRef N) {
+        return N->child_begin();
+    }
 
-        static ChildIteratorType child_end(NodeRef N) { return N->child_end(); }
+    static ChildIteratorType child_end(NodeRef N) {
+        return N->child_end();
+    }
 
-        static ChildEdgeIteratorType child_edge_begin(NodeRef N) { return N->child_edge_begin(); }
+    static ChildEdgeIteratorType child_edge_begin(NodeRef N) {
+        return N->child_edge_begin();
+    }
 
-        static ChildEdgeIteratorType child_edge_end(NodeRef N) { return N->child_edge_end(); }
+    static ChildEdgeIteratorType child_edge_end(NodeRef N) {
+        return N->child_edge_end();
+    }
 
-        static NodeRef edge_dest(EdgeRef E) { return E.second; }
-    };
+    static NodeRef edge_dest(EdgeRef E) {
+        return E.second;
+    }
+};
 
-    template<>
-    struct GraphTraits<DyckCallGraph *> : public GraphTraits<DyckCallGraphNode *> {
-        static NodeRef getEntryNode(DyckCallGraph *CGN) { return CGN->getFunction(nullptr); }
+template <> struct GraphTraits<DyckCallGraph *> : public GraphTraits<DyckCallGraphNode *> {
+    static NodeRef getEntryNode(DyckCallGraph *CGN) {
+        return CGN->getFunction(nullptr);
+    }
 
-        using nodes_iterator = value_iterator<FunctionMapTy::iterator>;
+    using nodes_iterator = value_iterator<FunctionMapTy::iterator>;
 
-        static nodes_iterator nodes_begin(DyckCallGraph *CG) { return CG->nodes_begin(); }
+    static nodes_iterator nodes_begin(DyckCallGraph *CG) {
+        return CG->nodes_begin();
+    }
 
-        static nodes_iterator nodes_end(DyckCallGraph *CG) { return CG->nodes_end(); }
-    };
+    static nodes_iterator nodes_end(DyckCallGraph *CG) {
+        return CG->nodes_end();
+    }
+};
 
-    template<>
-    struct GraphTraits<const DyckCallGraph *> : public GraphTraits<const DyckCallGraphNode *> {
-        static NodeRef getEntryNode(const DyckCallGraph *CGN) { return CGN->getFunction(nullptr); }
+template <> struct GraphTraits<const DyckCallGraph *> : public GraphTraits<const DyckCallGraphNode *> {
+    static NodeRef getEntryNode(const DyckCallGraph *CGN) {
+        return CGN->getFunction(nullptr);
+    }
 
-        using nodes_iterator = value_iterator<FunctionMapTy::const_iterator>;
+    using nodes_iterator = value_iterator<FunctionMapTy::const_iterator>;
 
-        static nodes_iterator nodes_begin(const DyckCallGraph *CG) { return CG->nodes_begin(); }
+    static nodes_iterator nodes_begin(const DyckCallGraph *CG) {
+        return CG->nodes_begin();
+    }
 
-        static nodes_iterator nodes_end(const DyckCallGraph *CG) { return CG->nodes_end(); }
-    };
-} // end of DyckCG's traits
+    static nodes_iterator nodes_end(const DyckCallGraph *CG) {
+        return CG->nodes_end();
+    }
+};
+} // namespace llvm
 
 #endif // DYCKAA_DYCKCALLGRAPH_H

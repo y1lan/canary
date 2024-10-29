@@ -66,8 +66,8 @@ std::map<std::string, int> API::RustSinkFunctionsForC = {
     {"alloc::sync::Arc<T>::from_raw", 0},
     {"alloc::boxed::Box<T>::from_raw", 0},
     {"alloc::string::String::from_raw_parts", 1},
-    {"std::ffi::c_str::CString::from_raw", 0},
-    {"std::ffi::c_str::CStr::from_ptr", 0},
+    {"alloc::ffi::c_str::CString::from_raw", 0},
+    {"core::ptr::drop_in_place", 0}
 };
 
 bool API::isMemoryAllocate(Instruction *I) {

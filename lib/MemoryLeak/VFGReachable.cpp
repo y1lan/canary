@@ -5,6 +5,7 @@
 #include "DyckAA/DyckVFG.h"
 #include "MemoryLeak/MLDReport.h"
 #include "MemoryLeak/MLDVFG.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -46,7 +47,7 @@ VFGReachable::VFGReachable(llvm::Module &M, MLDVFG *MVFG, DyckAliasAnalysis *DAA
     for (auto &F : M) {
         auto CtrlFlowGraph = std::make_shared<CFG>(&F);
         CFGMap.insert({&F, CtrlFlowGraph});
-        for (auto &BB : F.getBasicBlockList()) {
+        for (auto &BB : make_range(F.begin(), F.end())) {
             // BBID[&BB] = BBIDCounter++;
             addBBID(&BB);
             Instruction *TerminatorInst = BB.getTerminator();
@@ -56,10 +57,10 @@ VFGReachable::VFGReachable(llvm::Module &M, MLDVFG *MVFG, DyckAliasAnalysis *DAA
             }
             if (auto BrInst = dyn_cast<BranchInst>(TerminatorInst)) {
                 expr BrVar = GlobalContext.bool_const(("B" + std::to_string(BranchCounter++)).c_str());
-                std::string inst;
-                raw_string_ostream s(inst);
-                s << *BrInst;
-                std::cout << BranchCounter - 1 << "   " << inst << std::endl;
+                //std::string inst;
+                //raw_string_ostream s(inst);
+                //s << *BrInst;
+                //std::cout << BranchCounter - 1 << "   " << inst << std::endl;
                 BranchBBCond[&BB].push_back(BrVar);
                 BranchBBCond[&BB].push_back(!BrVar);
             }
@@ -90,13 +91,10 @@ VFGReachable::VFGReachable(llvm::Module &M, MLDVFG *MVFG, DyckAliasAnalysis *DAA
 }
 
 void VFGReachable::solveAllSlices() {
-    std::vector<MLDReport> result;
     for (auto SliceIt = MVFG->begin(); SliceIt != MVFG->end(); SliceIt++) {
         CurrSlice = &SliceIt->second;
-        result.push_back(solveReachable());
-    }
-    for (auto Report : result) {
-        outs() << Report.toString() << "\n";
+        MLDReport report = solveReachable();
+        std::cout << report.toString() << "\n";
     }
 }
 
@@ -117,7 +115,10 @@ MLDReport VFGReachable::solveReachable() {
         WorkList.pop();
         BasicBlock *CurrBB = getBasciBlock(Curr->getValue());
 
-        assert(CurrBB && "A value which contained by any BB comes out.\n");
+        // assert(CurrBB && "A value which contained by any BB comes out.\n");
+        if(!CurrBB){
+            continue;
+        }
         expr ParentCond = VFGNodeCond.at(Curr);
         for (auto Edge = Curr->begin(); Edge != Curr->end(); Edge++) {
             BBCond.clear();
@@ -132,7 +133,7 @@ MLDReport VFGReachable::solveReachable() {
             }
             else if (Edge->second > 0) {
                 BasicBlock *SuccBB = getBasciBlock(Edge->first->getValue());
-                assert(SuccBB && "A value which contained by any BB comes out.\n");
+                // assert(SuccBB && "A value which contained by any BB comes out.\n");
                 Cond = computerCallCond(CurrBB, SuccBB, getCallSite(Edge->second));
             }
             else if (Edge->second < 0) {
@@ -140,10 +141,10 @@ MLDReport VFGReachable::solveReachable() {
                 assert(SuccBB && "A value which contained by any BB comes out.\n");
                 Cond = computerRetCond(CurrBB, SuccBB, getCallSite(Edge->second));
             }
-            // std::string v;
-            // raw_string_ostream s(v);
-            // s << *Edge->first->getValue();
-            // std::cout << "\033[34m Cond :" << Cond << "  " << v << "\033[0m" << std::endl;
+            //std::string v;
+            //raw_string_ostream s(v);
+            //s << *Edge->first->getValue();
+            //std::cout << "\033[34m Cond :" << Cond << "  " << v << "\033[0m" << std::endl;
             Cond = Cond && ParentCond;
             if (VFGNodeCond.count(Edge->first)) {
                 expr UpdateCond = VFGNodeCond.at(Edge->first) || Cond;
@@ -170,7 +171,7 @@ MLDReport VFGReachable::solveReachable() {
     }
 
     z3::solver FinalSolver(GlobalContext);
-    std::cout << "\033[35mFinalGoal" << FinalGoal << "\033[0m" << std::endl;
+    // std::cout << "\033[35mFinalGoal" << FinalGoal << "\033[0m" << std::endl;
     FinalSolver.add(FinalGoal == getFalseCond());
     z3::check_result Result = FinalSolver.check();
     MLDReport::ReportType Report = MLDReport::NeverFree;
@@ -257,16 +258,16 @@ expr VFGReachable::computerCallCond(BasicBlock *src, BasicBlock *dst, const Call
     if (src->getParent() == mid->getParent()) {
         src_to_mid = computerIntraCond(src, mid);
     }
-
-    BasicBlock *entry = &dst->getParent()->getEntryBlock();
-    if (!entry) {
-        outs() << "Reach a declared fucntion and stop the search\n";
+    if (!dst || dst->getParent()->isDeclaration()) {
+        // std::cout << "Reach a declared fucntion and stop the search\n";
         return src_to_mid;
     }
-    assert(entry && "Entry is abtained by fucntion");
+    BasicBlock &entry = dst->getParent()->getEntryBlock();
+    
+    assert(entry.isEntryBlock() && "Entry is abtained by fucntion");
     expr entry_to_dst = getTrueCond();
-    if (entry->getParent() == dst->getParent()) {
-        expr entry_to_dst = computerIntraCond(entry, dst);
+    if (entry.getParent() == dst->getParent()) {
+        expr entry_to_dst = computerIntraCond(&entry, dst);
     }
     return src_to_mid && entry_to_dst;
 }

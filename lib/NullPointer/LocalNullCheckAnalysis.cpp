@@ -166,7 +166,7 @@ void LocalNullCheckAnalysis::tag() {
                 if (isa<ReturnInst>(&I)) {
                     NFA->add(F, OpK);
                 } else if (auto *CI = dyn_cast<CallInst>(&I)) {
-                    if (K < CI->getNumArgOperands()) NFA->add(F, CI, K);
+                    if (K < CI->getFunctionType()->getNumParams()) NFA->add(F, CI, K);
                 } else {
                     // ... omit others
                 }
@@ -246,7 +246,7 @@ void LocalNullCheckAnalysis::transfer(Edge E, const BitVector &In, BitVector &Ou
             if (auto *Callee = CI->getCalledFunction()) {
                 if (Callee->isIntrinsic() && Callee->getIntrinsicID() >= Intrinsic::memcpy
                     && Callee->getIntrinsicID() <= Intrinsic::memset_element_unordered_atomic) {
-                    for (unsigned K = 0; K < CI->getNumArgOperands(); ++K) {
+                    for (unsigned K = 0; K < CI->getFunctionType()->getNumParams(); ++K) {
                         auto Op = CI->getArgOperand(K);
                         if (!Op->getType()->isPointerTy()) continue;
                         Set(Op);

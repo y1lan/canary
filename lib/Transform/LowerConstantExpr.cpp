@@ -19,8 +19,9 @@
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Verifier.h>
-#include <set>
+#include <map>
 #include "Transform/LowerConstantExpr.h"
+#include "llvm/IR/Function.h"
 
 #define DEBUG_TYPE "LowerConstantExpr"
 
@@ -73,7 +74,8 @@ static bool transformCall(Instruction &I, const DataLayout &DL) {
     if (isa<ConstantExpr>(CalledOp)) {
         auto *PossibleCallee = CalledOp->stripPointerCastsAndAliases();
         if (isa<Function>(PossibleCallee)) {
-            auto *FuncTy = dyn_cast<FunctionType>(PossibleCallee->getType()->getPointerElementType());
+            // auto *FuncTy = dyn_cast<FunctionType>(PossibleCallee->getType()->getPointerElementType());
+            auto *FuncTy = dyn_cast<Function>(PossibleCallee)->getFunctionType();
             assert(FuncTy);
             if (FuncTy->getNumParams() != CI->arg_size()) return false;
 

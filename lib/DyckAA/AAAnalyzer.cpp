@@ -16,11 +16,15 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <cassert>
 #include <llvm/IR/GetElementPtrTypeIterator.h>
 #include <llvm/IR/InstIterator.h>
 #include "AAAnalyzer.h"
 #include "Support/RecursiveTimer.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/Support/Casting.h"
 
 static cl::opt<unsigned> FunctionTypeCheckLevel("function-type-check-level", cl::init(4), cl::Hidden,
                                                 cl::desc("The level of checking the compatability of function types"
@@ -274,8 +278,8 @@ void AAAnalyzer::initFunctionGroups() {
         // the function only used in call instructions cannot alias with
         // certain function pointers
         if (!OnlyUsedAsCallFunc) {
-            auto *FTy = (FunctionType *) ((PointerType *) Func->getType())->getPointerElementType();
-
+            // auto *FTy = (FunctionType *) ((PointerType *) Func->getType())->getPointerElementType();
+            auto *FTy = (FunctionType *)Func->getValueType();
             FunctionTypeNode *Root = this->initFunctionGroup(FTy);
             Root->CompatibleFuncs.insert(Func);
         }
@@ -365,6 +369,7 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
         Value *Idx = GEP->getOperand(++IdxIdx);
         auto *CI = dyn_cast<ConstantInt>(Idx);
         if (AggOrPointerTy->isStructTy()) {
+            
             // example: gep y 0 constIdx
             // s1: y--deref-->?1--(fieldIdx idxLabel)-->?2
             DyckGraphNode *TheStruct = this->addPtrTo(Current, nullptr);
@@ -373,18 +378,23 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
 
             // s2: ?3--deref-->?2
             auto FieldIdx = (unsigned) (*(CI->getValue().getRawData()));
-            if(FieldIdx == 0)
-                continue;
+            // if(FieldIdx == 0){
+            //     AggOrPointerTy = GTI.getIndexedType();
+            //     GTI++;
+            //     continue;
+            // }
             DyckGraphNode *Field = this->addField(TheStruct, FieldIdx, nullptr);
             DyckGraphNode *FieldPtr = this->addPtrTo(nullptr, Field);
 
             // the label representation and feature impl is temporal.
             // s3: y--(fieldIdx offLabel)-->?3
+            // here is still field sensitive. 
             Current->addTarget(FieldPtr, (CFLGraph->getOrInsertOffsetEdgeLabel(FieldIdx)));
 
             // update current
             Current = FieldPtr;
         } else if (AggOrPointerTy->isPointerTy() || AggOrPointerTy->isArrayTy() || AggOrPointerTy->isVectorTy()) {
+            // If it is a pointer type, then Current variables would not change and return back to join alias.
             if (!CI)
                 wrapValue(Idx);
         } else {
@@ -654,10 +664,13 @@ void AAAnalyzer::handleInstrinsic(Instruction *Inst) {
     }
 
     // wrap unhandled operand
-    for (unsigned K = 0; K < CallI->getNumArgOperands(); K++) {
-        if (!(Mask & (1 << K))) {
-            wrapValue(CallI->getArgOperand(K));
-        }
+    FunctionType * FTy = CallI->getFunctionType();
+    if(FTy){
+        for (unsigned K = 0; K < FTy->getNumParams(); K++) {
+            if (!(Mask & (1 << K))) {
+                wrapValue(CallI->getArgOperand(K));
+            }
+        }        
     }
     wrapValue(CallI->getCalledOperand());
 }
@@ -791,15 +804,18 @@ void AAAnalyzer::handleInst(Instruction *Inst, DyckCallGraphNode *Parent) {
             Value *CastOperand = Inst->getOperand(0);
             makeAlias(wrapValue(Inst), wrapValue(CastOperand));
 
-            //  function pointer cast
-            Type *OrigTy = CastOperand->getType();
-            Type *CastTy = Inst->getType();
+            // //  function pointer cast
+            // Type *OrigTy = CastOperand->getType();
+            // Type *CastTy = Inst->getType();
 
-            if (OrigTy->isPointerTy() && OrigTy->getPointerElementType()->isFunctionTy() && CastTy->isPointerTy()
-                && CastTy->getPointerElementType()->isFunctionTy()) {
-                combineFunctionGroups((FunctionType *) OrigTy->getPointerElementType(),
-                                      (FunctionType *) CastTy->getPointerElementType());
-            }
+            // if (OrigTy->isPointerTy() /*&& OrigTy->getPointerElementType()->isFunctionTy() */ && CastTy->isPointerTy()
+            //     /*&& CastTy->getPointerElementType()->isFunctionTy()*/) {
+            //     // combineFunctionGroups((FunctionType *) OrigTy->getPointerElementType(),
+            //     //                       (FunctionType *) CastTy->getPointerElementType());
+            //     auto OrigEq = CFLGraph->retrieveDyckVertex(CastOperand).first->getEquivalentSet();
+            //     auto CastTy = CFLGraph->retrieveDyckVertex(CastOperand).first->getEquivalentSet();
+            //     // for(auto OrignValueIt = OrigEq->begin(); OrigValueIt)
+            // }
 
             Mask |= (~0);
         }
@@ -818,11 +834,10 @@ void AAAnalyzer::handleInst(Instruction *Inst, DyckCallGraphNode *Parent) {
 
             Value *CV = CallI->getCalledOperand();
             std::vector<Value *> Args;
-            for (unsigned K = 0; K < CallI->getNumArgOperands(); K++) {
-                wrapValue(CallI->getArgOperand(K));
-                Args.push_back(CallI->getArgOperand(K));
+            for(auto ArgIt =CallI->arg_begin(); ArgIt != CallI->arg_end(); ArgIt++){
+                wrapValue(*ArgIt);
+                Args.push_back(*ArgIt);
             }
-
             this->handleInvokeCallInst(CallI, CV, &Args, Parent);
 
             if (!CallI->getType()->isVoidTy())
@@ -962,7 +977,7 @@ void AAAnalyzer::handleCommonFunctionCall(Call *C, DyckCallGraphNode *Caller, Dy
         //return<->call
         Type *CalledValueTy = CallInstruction->getCalledOperand()->getType();
         assert(CalledValueTy->isPointerTy() && "A called value is not a pointer type!");
-        Type *CalledFuncTy = CalledValueTy->getPointerElementType();
+        Type *CalledFuncTy = CallInstruction->getFunctionType(); //CalledValueTy->getPointerElementType();
         assert(CalledFuncTy->isFunctionTy() && "A called value is not a function pointer type!");
 
         std::set<Value *> &Rets = Callee->getReturns();
@@ -1041,16 +1056,26 @@ bool AAAnalyzer::handlePointerFunctionCalls(DyckCallGraphNode *Caller, int Count
 //		outs() << "Handling indirect calls in Function #" << FUNCTION_COUNT << "... " << percentage << "%, \r";
 
         PointerCall *PCall = *PCIt;
+        CallInst *CallI = dyn_cast<CallInst>(PCall->getInstruction());
+        assert(CallI && "Pointer Call is also a Call Instruction");
         auto *PCalledVal = PCall->getCalledValue();
-        Type *FTy = PCalledVal->getType()->getPointerElementType();
+        FunctionType *FTy = CallI->getFunctionType();//PCalledVal->getType()->getPointerElementType();
         assert(FTy->isFunctionTy() && "Error in AAAnalyzer::handlePointerFunctionCalls!");
 
         // handle each unhandled, possible function
         std::set<Value *> EquivAndTypeCompSet;
         auto *EquivSet = (const std::set<Value *> *) CFLGraph->retrieveDyckVertex(PCalledVal).first->getEquivalentSet();
-        std::set<Function *> *Cands = this->getCompatibleFunctions((FunctionType *) FTy);
-        set_intersection(Cands->begin(), Cands->end(), EquivSet->begin(), EquivSet->end(),
-                         inserter(EquivAndTypeCompSet, EquivAndTypeCompSet.begin()));
+        // std::set<Function *> *Cands = this->getCompatibleFunctions((FunctionType *) FTy);
+        for(auto ValueIt = EquivSet->begin(); ValueIt != EquivSet->end(); ValueIt ++){
+            Value * Val = *ValueIt;
+            if(auto FVal = dyn_cast<Function>(Val)){
+                if(FVal->getFunctionType() == FTy){
+                    EquivAndTypeCompSet.insert(FVal);
+                }
+            }
+        }
+        // set_intersection(Cands->begin(), Cands->end(), EquivSet->begin(), EquivSet->end(),
+        //                  inserter(EquivAndTypeCompSet, EquivAndTypeCompSet.begin()));
 
         std::set<Value *> UnhandledFunction;
         set_difference(EquivAndTypeCompSet.begin(), EquivAndTypeCompSet.end(), PCall->begin(), PCall->end(),
@@ -1068,14 +1093,6 @@ bool AAAnalyzer::handlePointerFunctionCalls(DyckCallGraphNode *Caller, int Count
         auto PFIt = UnhandledFunction.begin();
         while (PFIt != UnhandledFunction.end()) {
             auto *MayAliasedFunctioin = (Function *) (*PFIt);
-            // print in console
-//            unsigned Rate = ((100 * (++CandCount)) / CandTotal);
-//            if (Percentage == 100 && Rate == 100) {
-//				outs() << "Handling indirect calls in Function #" << FUNCTION_COUNT << "... " << "100%, 100%. Done!\r";
-//            } else {
-//				outs() << "Handling indirect calls in Function #" << FUNCTION_COUNT << "... " << percentage << "%, " << RATE << "%         \r";
-//            }
-
             if (!Ret) Ret = true;
             PCall->addMayAliasedFunction(MayAliasedFunctioin);
             handleCommonFunctionCall(PCall, Caller, DyckCG->getOrInsertFunction(MayAliasedFunctioin));
