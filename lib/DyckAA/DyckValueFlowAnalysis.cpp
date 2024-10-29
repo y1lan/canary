@@ -47,9 +47,9 @@ bool DyckValueFlowAnalysis::runOnModule(Module &M) {
     RecursiveTimer DyckVFA("Running DyckVFA");
     auto *DyckAA = &getAnalysis<DyckAliasAnalysis>();
     auto *DyckMRA = &getAnalysis<DyckModRefAnalysis>();
-    if(DyckAA->analysisC){
-      return false;
-    }
+    // if(DyckAA->analysisC){
+    //   return false;
+    // }
     VFG = new DyckVFG(DyckAA, DyckMRA, &M);
     return false;
 }
