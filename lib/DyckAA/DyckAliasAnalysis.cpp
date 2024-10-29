@@ -45,13 +45,11 @@ static cl::opt<bool> DotCallGraph("dot-dyck-callgraph", cl::init(false), cl::Hid
 static cl::opt<bool> CountFP("count-fp", cl::init(false), cl::Hidden,
                              cl::desc("Calculate how many functions a function pointer may point to."));
 
-bool PrintCSourceFunctions = false;
-
-static cl::opt<std::string> PrintCSourceFunctionsFlag(
+cl::opt<std::string> PrintCSourceFunctions(
     "print-c-source-functions", cl::Hidden,
     cl::desc("Works for collecting the functions which may return dynamic allocated memory pointers."));
 
-static cl::opt<std::string> CSourceFunctions("c-source-functions", cl::value_desc("filename"), cl::Hidden,
+cl::opt<std::string> CSourceFunctions("c-source-functions", cl::value_desc("filename"), cl::Hidden,
                                              cl::desc("path to file which contains the names of c source functions."));
 
 char DyckAliasAnalysis::ID = 0;
@@ -98,9 +96,10 @@ DyckGraph *DyckAliasAnalysis::getDyckGraph() const {
 
 bool DyckAliasAnalysis::runOnModule(Module &M) {
     RecursiveTimer DyckAA("Running DyckAA");
-    if(!PrintCSourceFunctionsFlag.getValue().empty()){
-        PrintCSourceFunctions = true; 
-    }
+    // if(!PrintCSourceFunctionsFlag.getValue().empty()){
+    //     PrintCSourceFunctionsFileName = PrintCSourceFunctionsFlag.getValue();
+    //     PrintCSourceFunctions = true; 
+    // }
     readCSourceFunctions();
     // alias analysis
     AAAnalyzer AA(&M, DyckPTG, DyckCG);
@@ -138,7 +137,7 @@ bool DyckAliasAnalysis::runOnModule(Module &M) {
         this->printAliasSetInformation();
         outs() << "Done!\n\n";
     }
-    if (PrintCSourceFunctions) {
+    if (!PrintCSourceFunctions.getValue().empty()) {
         this->printCSourceFunctions();
     }
 
@@ -203,82 +202,83 @@ void DyckAliasAnalysis::printAliasSetInformation() {
     //}
 
     ///*if (DotAliasSet) */
-    //{
-    //    outs() << "Printing alias_rel.dot... ";
-    //    outs().flush();
+    {
+       outs() << "Printing alias_rel.dot... ";
+       outs().flush();
 
-    //    FILE *AliasRel = fopen("alias_rel.dot", "w");
-    //    fprintf(AliasRel, "digraph rel{\n");
+       FILE *AliasRel = fopen("alias_rel.dot", "w");
+       fprintf(AliasRel, "digraph rel{\n");
 
-    //    std::map<DyckGraphNode *, int> TheMap;
-    //    int Idx = 0;
-    //    std::set<DyckGraphNode *> &Reps = DyckPTG->getVertices();
-    //    auto RepIt = Reps.begin();
-    //    while (RepIt != Reps.end()) {
-    //        Idx++;
-    //        std::set<llvm::Value *> *EqSets = (*RepIt)->getEquivalentSet();
-    //        std::string LabelDesc;
-    //        raw_string_ostream LabelDescBuilder(LabelDesc);
-    //        std::string LabelColor("black");
-    //        if ((*RepIt)->isAliasOfHeapAlloc()) {
-    //            LabelColor = "red";
-    //        }
-    //        for (auto Val : *EqSets) {
-    //            assert(Val != nullptr && "Error: val is null in an equiv set!");
-    //            if (isa<Function>(Val)) {
-    //                LabelDescBuilder << ((Function *)Val)->getName() << "\n";
-    //            }
-    //            else {
-    //                LabelDescBuilder << *Val << "\n";
-    //            }
-    //        }
+       std::map<DyckGraphNode *, int> TheMap;
+       int Idx = 0;
+       std::set<DyckGraphNode *> &Reps = DyckPTG->getVertices();
+       auto RepIt = Reps.begin();
+       while (RepIt != Reps.end()) {
+           Idx++;
+           std::set<llvm::Value *> *EqSets = (*RepIt)->getEquivalentSet();
+           std::string LabelDesc;
+           raw_string_ostream LabelDescBuilder(LabelDesc);
+           std::string LabelColor("black");
+           if ((*RepIt)->isAliasOfHeapAlloc()) {
+               LabelColor = "red";
+           }
+           for (auto Val : *EqSets) {
+               assert(Val != nullptr && "Error: val is null in an equiv set!");
+               if (isa<Function>(Val)) {
+                   LabelDescBuilder << ((Function *)Val)->getName() << "\n";
+               }
+               else {
+                   LabelDescBuilder << *Val << "\n";
+               }
+           } 
+           LabelDescBuilder << (*RepIt)->getIndex() << "\n";
 
-    //        auto LabelDescIdx = LabelDesc.find('\"');
-    //        while (LabelDescIdx != std::string::npos) {
-    //            LabelDesc.insert(LabelDescIdx, "\\");
-    //            LabelDescIdx = LabelDesc.find('\"', LabelDescIdx + 2);
-    //        }
-    //        fprintf(AliasRel, "a%d[color=\"%s\"label=\"%s\"];\n", Idx, LabelColor.c_str(), LabelDesc.c_str());
-    //        TheMap.insert(std::pair<DyckGraphNode *, int>(*RepIt, Idx));
-    //        RepIt++;
-    //    }
+           auto LabelDescIdx = LabelDesc.find('\"');
+           while (LabelDescIdx != std::string::npos) {
+               LabelDesc.insert(LabelDescIdx, "\\");
+               LabelDescIdx = LabelDesc.find('\"', LabelDescIdx + 2);
+           }
+           fprintf(AliasRel, "a%d[color=\"%s\"label=\"%s\"];\n", Idx, LabelColor.c_str(), LabelDesc.c_str());
+           TheMap.insert(std::pair<DyckGraphNode *, int>(*RepIt, Idx));
+           RepIt++;
+       }
 
-    //    RepIt = Reps.begin();
-    //    while (RepIt != Reps.end()) {
-    //        DyckGraphNode *DGN = *RepIt;
-    //        std::map<DyckGraphEdgeLabel *, std::set<DyckGraphNode *>> &OutVs = DGN->getOutVertices();
+       RepIt = Reps.begin();
+       while (RepIt != Reps.end()) {
+           DyckGraphNode *DGN = *RepIt;
+           std::map<DyckGraphEdgeLabel *, std::set<DyckGraphNode *>> &OutVs = DGN->getOutVertices();
 
-    //        auto OvIt = OutVs.begin();
-    //        while (OvIt != OutVs.end()) {
-    //            auto *Label = (DyckGraphEdgeLabel *)OvIt->first;
-    //            std::set<DyckGraphNode *> *oVs = &OvIt->second;
+           auto OvIt = OutVs.begin();
+           while (OvIt != OutVs.end()) {
+               auto *Label = (DyckGraphEdgeLabel *)OvIt->first;
+               std::set<DyckGraphNode *> *oVs = &OvIt->second;
 
-    //            auto OIt = oVs->begin();
-    //            while (OIt != oVs->end()) {
-    //                DyckGraphNode *Rep1 = DGN;
-    //                DyckGraphNode *Rep2 = (*OIt);
+               auto OIt = oVs->begin();
+               while (OIt != oVs->end()) {
+                   DyckGraphNode *Rep1 = DGN;
+                   DyckGraphNode *Rep2 = (*OIt);
 
-    //                assert(TheMap.count(Rep1) && "ERROR in DotAliasSet (1)\n");
-    //                assert(TheMap.count(Rep2) && "ERROR in DotAliasSet (2)\n");
+                   assert(TheMap.count(Rep1) && "ERROR in DotAliasSet (1)\n");
+                   assert(TheMap.count(Rep2) && "ERROR in DotAliasSet (2)\n");
 
-    //                int Idx1 = TheMap[Rep1];
-    //                int Idx2 = TheMap[Rep2];
-    //                fprintf(AliasRel, "a%d->a%d[label=\"%s\"];\n", Idx1, Idx2, Label->getEdgeLabelDescription().data());
+                   int Idx1 = TheMap[Rep1];
+                   int Idx2 = TheMap[Rep2];
+                   fprintf(AliasRel, "a%d->a%d[label=\"%s\"];\n", Idx1, Idx2, Label->getEdgeLabelDescription().data());
 
-    //                OIt++;
-    //            }
+                   OIt++;
+               }
 
-    //            OvIt++;
-    //        }
+               OvIt++;
+           }
 
-    //        TheMap.insert(std::pair<DyckGraphNode *, int>(*RepIt, Idx));
-    //        RepIt++;
-    //    }
+           TheMap.insert(std::pair<DyckGraphNode *, int>(*RepIt, Idx));
+           RepIt++;
+       }
 
-    //    fprintf(AliasRel, "}\n");
-    //    fclose(AliasRel);
-    //    outs() << "Done!\n";
-    //}
+       fprintf(AliasRel, "}\n");
+       fclose(AliasRel);
+       outs() << "Done!\n";
+    }
 
     /*if (OutputAliasSet)*/
     {
@@ -333,7 +333,7 @@ void DyckAliasAnalysis::printAliasSetInformation() {
 void DyckAliasAnalysis::printCSourceFunctions() {
 
     std::error_code EC;
-    raw_fd_ostream c_marked_functions(PrintCSourceFunctionsFlag.getValue(), EC);
+    raw_fd_ostream c_marked_functions(PrintCSourceFunctions.getValue(), EC);
     for (auto &CGNodeIt : *DyckCG) {
         DyckCallGraphNode *CGNode = CGNodeIt.second;
         // overlook fake function node and declared fucntion nodes .
