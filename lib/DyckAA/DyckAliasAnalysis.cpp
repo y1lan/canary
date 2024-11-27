@@ -100,7 +100,7 @@ bool DyckAliasAnalysis::runOnModule(Module &M) {
     //     PrintCSourceFunctionsFileName = PrintCSourceFunctionsFlag.getValue();
     //     PrintCSourceFunctions = true; 
     // }
-    readCSourceFunctions();
+    // readCSourceFunctions();
     // alias analysis
     AAAnalyzer AA(&M, DyckPTG, DyckCG);
     AA.intraProcedureAnalysis();
@@ -291,11 +291,11 @@ void DyckAliasAnalysis::printAliasSetInformation() {
         Log << "================= Alias Sets ==================\n";
         Log << "===== {.} means pthread escaped alias set =====\n";
 
-        int Idx = 0;
+        // int Idx = 0;
         std::set<DyckGraphNode *> &Reps = DyckPTG->getVertices();
         auto RepsIt = Reps.begin();
         while (RepsIt != Reps.end()) {
-            Idx++;
+            // Idx++;
             DyckGraphNode *Rep = *RepsIt;
 
             std::set<llvm::Value *> *ESet = Rep->getEquivalentSet();
@@ -303,7 +303,7 @@ void DyckAliasAnalysis::printAliasSetInformation() {
             while (EIt != ESet->end()) {
                 auto *Val = (Value *)((*EIt));
                 assert(Val != nullptr && "Error: val is null in an equiv set!");
-                Log << "[" << Idx << "]";
+                Log << "[" << Rep->getIndex() << "]";
 
                 if (isa<Function>(Val)) {
                     Log << ((Function *)Val)->getName() << "\n";
