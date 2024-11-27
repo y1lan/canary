@@ -1,6 +1,7 @@
 #include "MemoryLeak/MLDInstrumentation.h"
 #include "DyckAA/DyckAliasAnalysis.h"
 #include "MemoryLeak/MLDAllocationAnalysis.h"
+#include "Support/API.h"
 #include <cassert>
 #include <cstdlib>
 #include <fstream>
@@ -9,6 +10,7 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/GlobalValue.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/InstIterator.h>
 #include <llvm/IR/Instruction.h>
@@ -21,6 +23,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <map>
 #include <queue>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -31,11 +34,14 @@ MLDInstrumentation::MLDInstrumentation()
     std::string sourceFile = CSourceFunctions.getValue();
     assert(!sourceFile.empty());
     std::fstream sourceFileStream(sourceFile);
-    DeclareFunctionDesc funcDesc;
-    while (!sourceFileStream.eof()) {
+    int size = 0;
+    sourceFileStream >> size;
+    for (int i = 0; i < size; i++) {
+        DeclareFunctionDesc funcDesc;
         sourceFileStream >> funcDesc;
-        std::cout << funcDesc;
+        
         this->FuncDescMap.insert({funcDesc.FunctionName, new NaiveAliasGraph(funcDesc)});
+        // API::HeapAllocFunctions.insert(funcDesc.FunctionName);
     }
 }
 
@@ -50,7 +56,7 @@ MLDInstrumentation::~MLDInstrumentation() {
 bool MLDInstrumentation::runOnModule(Module &M) {
     LLVMContext &ctx = M.getContext();
     std::vector<Type *> paramTy = std::vector<Type *>(1, Type::getInt64Ty(ctx));
-    FunctionType *mallocFT = FunctionType::get(PointerType::get(ctx, 8), paramTy, false);
+    FunctionType *mallocFT = FunctionType::get(PointerType::get(ctx, 0), paramTy, false);
     // Function *F = Function::Create(mallocFT, Function::ExternalWeakLinkage, "malloc", M);
     FunctionCallee mallocCallee = M.getOrInsertFunction("malloc", mallocFT);
     for (auto &F : M) {
@@ -61,8 +67,10 @@ bool MLDInstrumentation::runOnModule(Module &M) {
         for (auto &I : instructions(F)) {
             if (isa<CallInst>(I)) {
                 CallInst *callInst = dyn_cast<CallInst>(&I);
-                if (this->FuncDescMap.find(callInst->getCalledFunction()->getName().str()) != this->FuncDescMap.end()) {
-                    callInstVec.push_back(callInst);
+                if (callInst->getCalledFunction()) {
+                    if (this->FuncDescMap.find(callInst->getCalledFunction()->getName().str()) != this->FuncDescMap.end()) {
+                        callInstVec.push_back(callInst);
+                    }
                 }
             }
         }
@@ -70,9 +78,9 @@ bool MLDInstrumentation::runOnModule(Module &M) {
         for (CallInst *callInst : callInstVec) {
             IRBuilder<> irBuilder(callInst->getContext());
             BasicBlock *parent = callInst->getParent();
-            irBuilder.SetInsertPoint(parent, callInst->getIterator()++);
+            irBuilder.SetInsertPoint(parent, ++callInst->getIterator());
             NaiveAliasGraph *aliasGraph = this->FuncDescMap.find(callInst->getCalledFunction()->getName().str())->second;
-            aliasGraph->instrument(irBuilder, callInst, M);
+            aliasGraph->instrumentRe(irBuilder, callInst, M);
         }
     }
     return false;
@@ -88,12 +96,13 @@ NaiveAliasGraphNode *NaiveAliasGraph::insertOrGetNode(int Index, bool Allocated)
     return node;
 }
 
-NaiveAliasGraph::NaiveAliasGraph(DeclareFunctionDesc &FuncDesc)
+NaiveAliasGraph::NaiveAliasGraph(const DeclareFunctionDesc &FuncDesc)
     : FuncDesc(FuncDesc) {
     for (auto i : this->FuncDesc.IndexOfParameters) {
-        NaiveAliasGraphNode *paramNode =
-            this->insertOrGetNode(i, this->FuncDesc.AllocationIndexes.find(i) != this->FuncDesc.AllocationIndexes.end());
+        bool aliasWithAllocation = this->FuncDesc.AllocationIndexes.find(i) != this->FuncDesc.AllocationIndexes.end();
+        NaiveAliasGraphNode *paramNode = this->insertOrGetNode(i, aliasWithAllocation);
         this->ParamNodes.push_back(paramNode);
+        // API::HeapAllocFunctionParameters[FuncDesc.FunctionName].push_back(aliasWithAllocation);
     }
     // Manually merge all return nodes into one abstract nodes;
     std::set<int> indexOfReturns(this->FuncDesc.IndexOfReturns.begin(), this->FuncDesc.IndexOfReturns.end());
@@ -110,6 +119,9 @@ NaiveAliasGraph::NaiveAliasGraph(DeclareFunctionDesc &FuncDesc)
     }
     else {
         this->retNode = nullptr;
+    }
+    if (returnIsAliasWithAllocation) {
+        API::HeapAllocFunctions.insert(FuncDesc.FunctionName);
     }
     // if access to any return node, then inserOrGetNode function would return the one created previously, and the second
     // argument would not be used.
@@ -151,19 +163,46 @@ void NaiveAliasGraph::instrument(IRBuilder<> &irBuilder, CallInst *callInst, Mod
     }
     std::map<NaiveAliasGraphNode *, Value *> aliasNode2ValueMap;
     std::queue<NaiveAliasGraphNode *> workList;
+    std::set<int> visited;
     for (int i = 0; i < numOfArgs; i++) {
         aliasNode2ValueMap.insert({this->ParamNodes[i], callInst->getArgOperand(i)});
         workList.push(this->ParamNodes[i]);
+        visited.insert(this->ParamNodes[i]->Index);
     }
     ConstantInt *LLVMInt4 = ConstantInt::get(Type::getInt64Ty(M.getContext()), 4);
     Type *LLVMInt64Type = Type::getInt64Ty(M.getContext());
-    PointerType *defaultPointerType = PointerType::get(M.getContext(), 8);
+    // PointerType *defaultPointerType = PointerType::get(M.getContext(), 8);
     while (!workList.empty()) {
         NaiveAliasGraphNode *current = workList.front();
         workList.pop();
+        Value *currentValue = aliasNode2ValueMap[current];
+        Type *currentType = currentValue->getType();
+        if (isa<Instruction>(currentValue)) {
+            Instruction *currentInst = dyn_cast<Instruction>(currentValue);
+            switch (currentInst->getOpcode()) {
+            case Instruction::GetElementPtr: {
+                currentType = dyn_cast<GetElementPtrInst>(currentInst)->getResultElementType();
+                break;
+            }
+            case Instruction::Alloca: {
+                currentType = dyn_cast<AllocaInst>(currentInst)->getAllocatedType();
+                break;
+            }
+            }
+        }
+        if (isa<GlobalValue>(currentValue)) {
+            currentType = dyn_cast<GlobalValue>(currentValue)->getValueType();
+        }
+        // outs() << current->Index << *currentValue << "\t";
+        // currentType->print(outs());
+        // outs() << "\n";
+
         for (auto outEdge : current->OutEdges) {
             NaiveAliasGraphNode *outNode = outEdge.first;
-            workList.push(outNode);
+            if (visited.find(outNode->Index) == visited.end()) {
+                workList.push(outNode);
+                visited.insert(outNode->Index);
+            }
             std::string outLabel = outEdge.second;
             auto valueIt = aliasNode2ValueMap.find(outNode);
             char kind = outLabel[0];
@@ -180,11 +219,11 @@ void NaiveAliasGraph::instrument(IRBuilder<> &irBuilder, CallInst *callInst, Mod
                     if (outNode->Allocation) {
                         CallInst *allocValue = irBuilder.CreateCall(
                             M.getFunction("malloc"), std::vector<Value *>(1, ConstantInt::get(LLVMInt64Type, 4)));
-                        irBuilder.CreateStore(allocValue, aliasNode2ValueMap[current]);
+                        irBuilder.CreateStore(allocValue, currentValue);
                         aliasNode2ValueMap.insert({outNode, allocValue});
                     }
                     else {
-                        LoadInst *loadValue = irBuilder.CreateLoad(defaultPointerType, aliasNode2ValueMap[current]);
+                        LoadInst *loadValue = irBuilder.CreateLoad(currentType, currentValue);
                         aliasNode2ValueMap.insert({outNode, loadValue});
                     }
 
@@ -196,13 +235,11 @@ void NaiveAliasGraph::instrument(IRBuilder<> &irBuilder, CallInst *callInst, Mod
                         CallInst *allocValue = irBuilder.CreateCall(
                             M.getFunction("malloc"),
                             std::vector<Value *>(1, ConstantInt::get(Type::getInt64Ty(M.getContext()), 4)));
-                        irBuilder.CreateInsertValue(aliasNode2ValueMap[current], allocValue,
-                                                    std::vector<unsigned>(offset + 1, offset));
+                        irBuilder.CreateInsertValue(currentValue, allocValue, std::vector<unsigned>(offset + 1, offset));
                         aliasNode2ValueMap.insert({outNode, allocValue});
                     }
                     else {
-                        Value *extractValue = irBuilder.CreateExtractValue(aliasNode2ValueMap[current],
-                                                                           std::vector<unsigned>(1, offset));
+                        Value *extractValue = irBuilder.CreateExtractValue(currentValue, std::vector<unsigned>(1, offset));
                         aliasNode2ValueMap.insert({outNode, extractValue});
                     }
                     break;
@@ -212,9 +249,7 @@ void NaiveAliasGraph::instrument(IRBuilder<> &irBuilder, CallInst *callInst, Mod
                     if (outNode->Allocation) {
                         errs() << "Offset of pointer should not be alias with allocation.\n";
                     }
-                    StructType *meaninglessStructType =
-                        StructType::get(M.getContext(), std::vector<Type *>(offset + 1, LLVMInt64Type));
-                    Value *gepValue = irBuilder.CreateConstGEP1_32(meaninglessStructType, aliasNode2ValueMap[current], offset);
+                    Value *gepValue = irBuilder.CreateConstGEP1_32(currentType, currentValue, offset);
                     aliasNode2ValueMap.insert({outNode, gepValue});
                     break;
                 }
@@ -225,22 +260,19 @@ void NaiveAliasGraph::instrument(IRBuilder<> &irBuilder, CallInst *callInst, Mod
                 switch (kind) {
                 // For dereference edge, the value have been initialized, then we just store the value into target.
                 case 'D':
-                    irBuilder.CreateLoad(defaultPointerType, aliasNode2ValueMap[current], targetValue);
+                    irBuilder.CreateLoad(currentType, currentValue, targetValue);
                     break;
                 // For field index edge, if the value have been initialize, then insert the value into target.
                 case '#':
-                    irBuilder.CreateInsertValue(aliasNode2ValueMap[current], targetValue,
-                                                std::vector<unsigned>(offset + 1, offset));
+                    irBuilder.CreateInsertValue(currentValue, targetValue, std::vector<unsigned>(offset + 1, offset));
                     break;
                 // For pointer offset edge, if the value have been initialize, but gep instruction should be in front of others.
                 // So replace the previous value by the new gep instruction and replace all the used and insert a load/insert
                 // instruction.
                 case '@':
                     Instruction *oldInst = dyn_cast<Instruction>(aliasNode2ValueMap[outNode]);
-                    StructType *meaninglessStructType =
-                        StructType::get(M.getContext(), std::vector<Type *>(offset + 1, LLVMInt64Type));
                     GetElementPtrInst *gepValue = GetElementPtrInst::Create(
-                        meaninglessStructType, aliasNode2ValueMap[current],
+                        currentType, currentValue,
                         std::vector<Value *>(1, ConstantInt::get(Type::getInt64Ty(M.getContext()), 4)));
                     // Value *gepValue  = CreateConstGEP1_32(meaninglessStructType, aliasNode2ValueMap[current], offset);
                     oldInst->replaceAllUsesWith(gepValue);
@@ -263,11 +295,189 @@ void NaiveAliasGraph::instrument(IRBuilder<> &irBuilder, CallInst *callInst, Mod
                         break;
                     }
                     default:
-                        errs() << "Unexpected Instruction Opcode for an existing instruction.\n";
+                        outs() << "Unexpected Instruction Opcode for an existing instruction.";
+                        outs() << outNode->Index << *aliasNode2ValueMap[outNode] << "\n";
+                        while (true) {
+                        }
                     }
                     break;
                 }
             }
+            outs() << outNode->Index << *aliasNode2ValueMap[outNode] << "\n";
         }
+        outs() << "\n";
+    }
+}
+
+void NaiveAliasGraph::instrumentRe(IRBuilder<> &irBuilder, CallInst *callInst, Module &M) {
+    int numOfArgs = callInst->arg_size();
+    if (numOfArgs != this->ParamNodes.size()) {
+        outs() << "\033[31mError: The number of arguments doesn't match the size of parameters.\033[0m\n";
+        return;
+    }
+    std::map<NaiveAliasGraphNode *, AllocaInst *> aliasNode2StackLocMap;
+    std::queue<NaiveAliasGraphNode *> workList;
+    std::set<int> visited;
+    for (int i = 0; i < numOfArgs; i++) {
+        AllocaInst *allocaInst = irBuilder.CreateAlloca(callInst->getArgOperand(i)->getType());
+        irBuilder.CreateStore(callInst->getArgOperand(i), allocaInst);
+        workList.push(this->ParamNodes[i]);
+        visited.insert(this->ParamNodes[i]->Index);
+        aliasNode2StackLocMap.insert({this->ParamNodes[i], allocaInst});
+    }
+    int allocationCount = 0;
+    std::string allocationNamePrefix = this->FuncDesc.FunctionName.append("SideEffect");
+    while (!workList.empty()) {
+        NaiveAliasGraphNode *current = workList.front();
+        workList.pop();
+        // outs() << current->Index << *aliasNode2StackLocMap[current] << "\n";
+        for (auto outEdge : current->OutEdges) {
+            NaiveAliasGraphNode *outNode = outEdge.first;
+            // outs() << current->Index << "\t" << outNode->Index << "\t" << outEdge.second << "\n";
+            if (visited.find(outNode->Index) == visited.end()) {
+                workList.push(outNode);
+                visited.insert(outNode->Index);
+            }
+            std::string outLabel = outEdge.second;
+            char kind = outLabel[0];
+            int offset = -1;
+            auto valueIt = aliasNode2StackLocMap.find(outNode);
+            if (outLabel.size() > 1) {
+                offset = atoi(outLabel.substr(1).c_str());
+            }
+            auto sizeOfStructyType = [&M](NaiveAliasGraphNode *node) {
+                int outSize = 0;
+                for (auto outEdge : node->OutEdges) {
+                    if (outEdge.second.size() > 1) {
+                        outSize = std::max<int>(atoi(outEdge.second.substr(1).c_str()), outSize);
+                    }
+                }
+                Type *currentType = nullptr;
+                currentType =
+                    StructType::get(M.getContext(), std::vector<Type *>(outSize + 1, Type::getInt8Ty(M.getContext())));
+
+                return std::make_pair(outSize, currentType);
+            };
+            if (valueIt == aliasNode2StackLocMap.end()) {
+                switch (kind) {
+                case 'D': {
+                    if (outNode->Allocation) {
+                        AllocaInst *allocaInst = irBuilder.CreateAlloca(PointerType::get(M.getContext(), 0));
+                        CallInst *mallocValue = irBuilder.CreateCall(
+                            M.getFunction("malloc"),
+                            std::vector<Value *>(1, ConstantInt::get(Type::getInt64Ty(M.getContext()), 64)),
+                            allocationNamePrefix + std::to_string(allocationCount++));
+                        Value *currentValue =
+                            irBuilder.CreateLoad(PointerType::get(M.getContext(), 0), aliasNode2StackLocMap[current]);
+                        irBuilder.CreateStore(mallocValue, allocaInst);
+                        irBuilder.CreateStore(mallocValue, currentValue);
+                        aliasNode2StackLocMap.insert({outNode, allocaInst});
+                    }
+                    else {
+                        auto sizeAndType = sizeOfStructyType(outNode);
+                        AllocaInst *allocaInst = nullptr;
+                        Type *outNodeType = sizeAndType.second;
+                        if (sizeAndType.first >= 1) {
+                            allocaInst = irBuilder.CreateAlloca(outNodeType);
+                        }
+                        else {
+                            allocaInst = irBuilder.CreateAlloca(PointerType::get(M.getContext(), 0));
+                        }
+                        Value *currentValue =
+                            irBuilder.CreateLoad(PointerType::get(M.getContext(), 0), aliasNode2StackLocMap[current]);
+                        Value *outValue = irBuilder.CreateLoad(outNodeType, currentValue);
+                        irBuilder.CreateStore(outValue, allocaInst);
+                        aliasNode2StackLocMap.insert({outNode, allocaInst});
+                    }
+                    break;
+                }
+                case '#': {
+                    if (outNode->Allocation) {
+                        AllocaInst *allocaInst = irBuilder.CreateAlloca(PointerType::get(M.getContext(), 0));
+                        CallInst *mallocValue = irBuilder.CreateCall(
+                            M.getFunction("malloc"),
+                            std::vector<Value *>(1, ConstantInt::get(Type::getInt64Ty(M.getContext()), 64)),
+                            allocationNamePrefix + std::to_string(allocationCount++));
+                        auto sizeAndType = sizeOfStructyType(current);
+                        Type *currentType = sizeAndType.second;
+                        LoadInst *currentValue = irBuilder.CreateLoad(currentType, aliasNode2StackLocMap[current]);
+                        irBuilder.CreateStore(mallocValue, allocaInst);
+                        irBuilder.CreateInsertValue(currentValue, mallocValue, std::vector<unsigned>(1, offset));
+                        aliasNode2StackLocMap.insert({outNode, allocaInst});
+                    }
+                    else {
+                        auto sizeAndTypeOfOutNode = sizeOfStructyType(outNode);
+                        AllocaInst *allocaInst = nullptr;
+                        Type *outNodeType = sizeAndTypeOfOutNode.second;
+                        if (sizeAndTypeOfOutNode.first >= 1) {
+                            allocaInst = irBuilder.CreateAlloca(outNodeType);
+                        }
+                        else {
+                            allocaInst = irBuilder.CreateAlloca(PointerType::get(M.getContext(), 0));
+                        }
+                        auto sizeAndTypeOfCurrent = sizeOfStructyType(current);
+                        Value *currentValue = irBuilder.CreateLoad(sizeAndTypeOfCurrent.second, aliasNode2StackLocMap[current]);
+                        // outs() << *currentValue << "\n";
+                        Value *outValue = irBuilder.CreateExtractValue(currentValue, std::vector<unsigned>(1, offset));
+                        irBuilder.CreateStore(outValue, allocaInst);
+                        aliasNode2StackLocMap.insert({outNode, allocaInst});
+                    }
+                    break;
+                }
+                case '@': {
+                    if (outNode->Allocation && offset == 0) {
+                        CallInst *mallocValue = irBuilder.CreateCall(
+                            M.getFunction("malloc"),
+                            std::vector<Value *>(1, ConstantInt::get(Type::getInt64Ty(M.getContext()), 64)),
+                            allocationNamePrefix + std::to_string(allocationCount++));
+                        irBuilder.CreateStore(mallocValue, aliasNode2StackLocMap[current]);
+                        aliasNode2StackLocMap.insert({outNode, aliasNode2StackLocMap[current]});
+                    }
+                    else {
+                        AllocaInst *allocaInst = irBuilder.CreateAlloca(PointerType::get(M.getContext(), 0));
+                        LoadInst *currentValue =
+                            irBuilder.CreateLoad(PointerType::get(M.getContext(), 0), aliasNode2StackLocMap[current]);
+                        // auto sizeAndTypeOfCurrent = sizeOfStructyType(current);
+                        Value *outValue = irBuilder.CreateGEP(
+                            Type::getInt8Ty(M.getContext()), currentValue,
+                            std::vector<Value *>(1, ConstantInt::get(Type::getInt32Ty(M.getContext()), offset)));
+                        irBuilder.CreateStore(outValue, allocaInst);
+                        aliasNode2StackLocMap.insert({outNode, allocaInst});
+                    }
+                }
+                }
+            }
+            else {
+                switch (kind) {
+                case 'D': {
+
+                    LoadInst *currentValue =
+                        irBuilder.CreateLoad(PointerType::get(M.getContext(), 0), aliasNode2StackLocMap[current]);
+                    LoadInst *outValue = irBuilder.CreateLoad(aliasNode2StackLocMap[outNode]->getAllocatedType(),
+                                                              aliasNode2StackLocMap[outNode]);
+                    irBuilder.CreateStore(outValue, currentValue);
+                    break;
+                }
+                case '#': {
+                    auto sizeAndTypeOfCurrent = sizeOfStructyType(current);
+                    LoadInst *currentValue = irBuilder.CreateLoad(sizeAndTypeOfCurrent.second, aliasNode2StackLocMap[current]);
+                    LoadInst *outValue = irBuilder.CreateLoad(sizeAndTypeOfCurrent.second->getStructElementType(offset),
+                                                              aliasNode2StackLocMap[outNode]);
+                    irBuilder.CreateInsertValue(currentValue, outValue, offset);
+                    break;
+                }
+                case '@': {
+                    LoadInst *currentValue =
+                        irBuilder.CreateLoad(PointerType::get(M.getContext(), 0), aliasNode2StackLocMap[current]);
+                    Value *outValue = irBuilder.CreateGEP(
+                        Type::getInt8Ty(M.getContext()), currentValue,
+                        std::vector<Value *>(1, ConstantInt::get(Type::getInt32Ty(M.getContext()), offset)));
+                    irBuilder.CreateStore(outValue, aliasNode2StackLocMap[outNode]);
+                }
+                }
+            }
+            // outs() << outNode->Index << aliasNode2StackLocMap[outNode] << "\n";
+        }
+        // outs() << "\n";
     }
 }
