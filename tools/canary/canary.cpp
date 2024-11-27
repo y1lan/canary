@@ -24,6 +24,7 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/InitializePasses.h>
+#include <llvm/Pass.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/FileSystem.h>
@@ -39,6 +40,7 @@
 
 #include "DyckAA/DyckAliasAnalysis.h"
 #include "MemoryLeak/MLDAllocationAnalysis.h"
+#include "MemoryLeak/MLDInstrumentation.h"
 #include "MemoryLeak/MLDValueFlowAnalysis.h"
 #include "Support/RecursiveTimer.h"
 #include "Support/Statistics.h"
@@ -55,6 +57,7 @@ static cl::opt<std::string> OutputFilename("o", cl::desc("<output bitcode file>"
 static cl::opt<bool> OutputAssembly("S", cl::desc("Write output as LLVM assembly"), cl::init(false));
 
 static cl::opt<bool> OnlyStatistics("s", cl::desc("Only output statistics"), cl::init(false));
+static cl::opt<bool> AnalysisAllocation("alloc", cl::desc("Analyze program to get c source functons"), cl::init(false));
 
 int main(int argc, char **argv) {
     InitLLVM X(argc, argv);
@@ -110,18 +113,25 @@ int main(int argc, char **argv) {
     // Passes.add(createPromoteMemoryToRegisterPass());
     // Passes.add(createSCCPPass());
     // Passes.add(createLoopSimplifyPass());
-    Passes.add(new LowerConstantExpr());
+    // Passes.add(new LowerConstantExpr());
     // Passes.add(TransformTimer->done());
     if (!OutputAssembly.getValue()) {
-        // auto *AnalysisTimer = new RecursiveTimerPass("Analyzing the bitcode");
-        // Passes.add(AnalysisTimer->start());
-        if (PrintCSourceFunctions) {
+        auto *AnalysisTimer = new RecursiveTimerPass("Analyzing the bitcode");
+        Passes.add(AnalysisTimer->start());
+        if (AnalysisAllocation) {
             Passes.add(new MLDAllocationAnalysis());
         }
         else {
+            auto *InstrumentationTimer = new RecursiveTimerPass("Instrumenting the LLVM IR");
+            Passes.add(InstrumentationTimer->start());
+            Passes.add(new MLDInstrumentation());
+            Passes.add(InstrumentationTimer->done());
+            auto *MLDAnalysis = new RecursiveTimerPass("Detecting the memory leak in Instrumented LLVM IR");
+            Passes.add(MLDAnalysis->start());
             Passes.add(new MLDValueFlowAnalysis());
+            Passes.add(MLDAnalysis->done());
         }
-        // Passes.add(AnalysisTimer->done());
+        Passes.add(AnalysisTimer->done());
     }
 
     std::unique_ptr<ToolOutputFile> Out;
