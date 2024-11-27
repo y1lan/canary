@@ -38,7 +38,7 @@ MLDVFG::MLDVFG(DyckVFG *VFG, DyckCallGraph *DyckCG, DyckAliasAnalysis *DyckAA)
         if (isa<Instruction>((*VFGNodeIt)->getValue()) && API::isHeapAllocate((Instruction *)(*VFGNodeIt)->getValue())) {
             SourcesSet.insert(*VFGNodeIt);
             ForwardReachable(*VFGNodeIt);
-            printSlice(LeakMap[*VFGNodeIt]);
+            
         }
     }
     for (auto &sourceSlicePair:LeakMap){
@@ -94,9 +94,16 @@ void MLDVFG::ForwardReachable(DyckVFGNode *VFGNode) {
             if (ForwardCFLReach.count(Edge->first)) {
                 auto It = ForwardCFLReach.find(Edge->first);
                 if (!It->second.count(NewCxt)) {
-                    ForwardCFLReach[Edge->first].emplace(NewCxt);
+                    // outs() << *Edge->first->getValue() << "\t" << ForwardCFLReach[Edge->first].size() << "\n";
+                    // for (auto cxt : ForwardCFLReach[Edge->first]) {
+                    //     std::cout << cxt;
+                    // }
+                    // std::cout << "==============" << "\n";
+                    ForwardCFLReach[Edge->first].emplace(NewCxt); 
                     auto NodeCxt = std::make_pair(Edge->first, NewCxt);
                     Worklist.push(NodeCxt);
+                    // std::cout << NewCxt;
+                    
                 }
             }
             else {
@@ -104,6 +111,7 @@ void MLDVFG::ForwardReachable(DyckVFGNode *VFGNode) {
                 auto NodeCxt = std::make_pair(Edge->first, NewCxt);
                 Worklist.push(NodeCxt);
             }
+            
         }
     }
     LeakMap[VFGNode] = std::move(ForwardSlice);

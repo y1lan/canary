@@ -17,9 +17,12 @@
  */
 
 #include <cassert>
+#include <cstddef>
+#include <ctime>
 #include <llvm/IR/GetElementPtrTypeIterator.h>
 #include <llvm/IR/InstIterator.h>
 #include "AAAnalyzer.h"
+#include "DyckAA/DyckGraphNode.h"
 #include "Support/RecursiveTimer.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
@@ -324,6 +327,8 @@ DyckGraphNode *AAAnalyzer::addField(DyckGraphNode *Val, long FieldIndex, DyckGra
     return Field;
 }
 
+
+
 DyckGraphNode *AAAnalyzer::addPtrTo(DyckGraphNode *Address, DyckGraphNode *Val) {
     assert((Address || Val) && "ERROR in addPtrTo\n");
 
@@ -372,32 +377,81 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
             
             // example: gep y 0 constIdx
             // s1: y--deref-->?1--(fieldIdx idxLabel)-->?2
+
+            // TheStruct is what the pointer will be dereferenced to .
             DyckGraphNode *TheStruct = this->addPtrTo(Current, nullptr);
 
             assert(CI && "ERROR: when dealing with gep");
 
             // s2: ?3--deref-->?2
+            // Regard the struct as a tuple, FieldIdx is i-th element.
             auto FieldIdx = (unsigned) (*(CI->getValue().getRawData()));
-            // if(FieldIdx == 0){
-            //     AggOrPointerTy = GTI.getIndexedType();
-            //     GTI++;
-            //     continue;
-            // }
-            DyckGraphNode *Field = this->addField(TheStruct, FieldIdx, nullptr);
-            DyckGraphNode *FieldPtr = this->addPtrTo(nullptr, Field);
+            // Offset is the byte offsets from the base pointer. 
+            auto DLayout = this->Mod->getDataLayout();
+            auto SLayout = DLayout.getStructLayout(dyn_cast<StructType>(AggOrPointerTy));
+            size_t offset = SLayout->getElementOffset(FieldIdx);
+
+            DyckGraphNode *Field = this->addField(TheStruct, offset, nullptr);
+            // if offset equal to 0, there is no need to create a new pointer.
+            DyckGraphNode *FieldPtr = Current;
+
+            if(offset != 0){
+                FieldPtr = this->addPtrTo(nullptr, Field);
+                Current->addTarget(FieldPtr, (CFLGraph->getOrInsertOffsetEdgeLabel(offset)));
+            }
 
             // the label representation and feature impl is temporal.
             // s3: y--(fieldIdx offLabel)-->?3
             // here is still field sensitive. 
-            Current->addTarget(FieldPtr, (CFLGraph->getOrInsertOffsetEdgeLabel(FieldIdx)));
 
             // update current
+            // if offset equal to 0, updating would not actually happen.
             Current = FieldPtr;
-        } else if (AggOrPointerTy->isPointerTy() || AggOrPointerTy->isArrayTy() || AggOrPointerTy->isVectorTy()) {
-            // If it is a pointer type, then Current variables would not change and return back to join alias.
-            if (!CI)
+        } 
+        else if (AggOrPointerTy->isArrayTy()){
+            if(!CI){
                 wrapValue(Idx);
-        } else {
+            }
+            else{
+                auto FieldIdx = (*(CI->getValue().getRawData()));
+                if(FieldIdx !=0){
+                    ArrayType * arrayType = dyn_cast<ArrayType>(AggOrPointerTy);
+                    auto ElementType = arrayType->getElementType();
+                    auto DLayout = this->Mod->getDataLayout();
+                    size_t size = DLayout.getTypeAllocSize(ElementType);
+                    DyckGraphNode *Element =  this->CFLGraph->retrieveDyckVertex(nullptr).first;
+                    Current->addTarget(Element, this->CFLGraph->getOrInsertOffsetEdgeLabel(size * FieldIdx));
+                    Current = Element;
+                }
+
+            }
+        }
+        else if (AggOrPointerTy->isPointerTy()) {
+            // If it is a pointer type, then Current variables would not change and return back to join alias.
+            // If it is a pointer type and the index is constant and not equal to 0, then compute the constant offset and return the offset pointer node.
+            if (!CI){
+                wrapValue(Idx);
+            }
+            else{
+                auto FieldIdx = (*(CI->getValue().getRawData()));
+                if(FieldIdx != 0){
+                    auto DLayout = this->Mod->getDataLayout();
+                    // the size of next type in GEP instruction is the unit to offset.
+                    auto size = DLayout.getTypeAllocSize(GTI.getIndexedType());
+                    // create a new node to represent the offset relation.
+                    DyckGraphNode *Element = this->CFLGraph->retrieveDyckVertex(nullptr).first;
+                    Current->addTarget(Element, this->CFLGraph->getOrInsertOffsetEdgeLabel(size * FieldIdx));
+                    Current = Element;
+                }
+                
+            }
+        }
+        else if (AggOrPointerTy->isVectorTy()){
+            if(!CI){
+                wrapValue(Idx);
+            }
+        }
+         else {
             errs() << "\n";
             errs() << *GEP << "\n";
             errs() << "ERROR in handleGep: unknown type:\n";

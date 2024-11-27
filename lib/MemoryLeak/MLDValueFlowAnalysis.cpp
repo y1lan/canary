@@ -7,6 +7,7 @@
 #include "DyckAA/DyckValueFlowAnalysis.h"
 #include "MemoryLeak/MLDVFG.h"
 #include "MemoryLeak/VFGReachable.h"
+#include "Support/RecursiveTimer.h"
 #include "llvm/Pass.h"
 
 char MLDValueFlowAnalysis::ID = 0;
@@ -26,10 +27,8 @@ void MLDValueFlowAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool MLDValueFlowAnalysis::runOnModule(llvm::Module &M) {
+    RecursiveTimer MLDA("Running MLD");
     auto *DyckAA = &getAnalysis<DyckAliasAnalysis>();
-    if(DyckAA->analysisC){
-        return false;
-    }
     auto *DyckVFA = &getAnalysis<DyckValueFlowAnalysis>();
     DyckAA->getDyckCallGraph()->constructCallSiteMap();
     VFG = new MLDVFG(DyckVFA->getDyckVFGraph(), DyckAA->getDyckCallGraph());

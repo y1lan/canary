@@ -36,6 +36,7 @@
 
 #include "DyckAA/DyckCallGraph.h"
 #include "DyckAA/DyckGraph.h"
+#include "DyckAA/DyckGraphNode.h"
 
 using namespace llvm;
 

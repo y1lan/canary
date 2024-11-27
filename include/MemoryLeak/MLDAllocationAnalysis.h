@@ -5,6 +5,7 @@
 #include "DyckAA/DyckCallGraph.h"
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Pass.h>
+#include <tuple>
 #include <vector>
 /// Function description for initializing arguments and return value of declared functions.
 struct AliasNodeEdgeDesc {
@@ -16,14 +17,7 @@ struct AliasNodeEdgeDesc {
           EndIndex(EndIndex),
           LabelDesc(LabelDesc) {}
     bool operator<(const AliasNodeEdgeDesc other) const {
-        bool result = this->StartIndex < other.StartIndex;
-        if (this->StartIndex == other.StartIndex) {
-            result = this->EndIndex < other.EndIndex;
-        }
-        if (this->EndIndex == other.EndIndex) {
-            result = this->LabelDesc < other.LabelDesc;
-        }
-        return result;
+        return std::tie(StartIndex, EndIndex, LabelDesc) < std::tie(other.StartIndex, other.EndIndex, other.LabelDesc);
     }
 };
 struct DeclareFunctionDesc {
@@ -35,9 +29,9 @@ struct DeclareFunctionDesc {
     std::set<AliasNodeEdgeDesc> AliasGraphOfReturns;
     std::set<int> AllocationIndexes;
     DeclareFunctionDesc() {}
-    DeclareFunctionDesc(std::string FunctionName, int NumOfParameters, std::vector<int> IndexOfParameters,std::vector<int> IndexOfReturns,
-                        std::set<AliasNodeEdgeDesc> AliasGraphOfParameters, std::set<AliasNodeEdgeDesc> AliasGraphOfReturns,
-                        std::set<int> AllocationIndexes)
+    DeclareFunctionDesc(std::string FunctionName, int NumOfParameters, std::vector<int> IndexOfParameters,
+                        std::vector<int> IndexOfReturns, std::set<AliasNodeEdgeDesc> AliasGraphOfParameters,
+                        std::set<AliasNodeEdgeDesc> AliasGraphOfReturns, std::set<int> AllocationIndexes)
         : FunctionName(FunctionName),
           IndexOfParameters(IndexOfParameters),
           IndexOfReturns(IndexOfReturns),

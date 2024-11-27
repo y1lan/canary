@@ -6,9 +6,11 @@
 #include "DyckAA/DyckVFG.h"
 #include <llvm/IR/Value.h>
 #include <map>
+#include <ostream>
 #include <set>
 #include <stack>
 #include <utility>
+#include <variant>
 #include <vector>
 
 class Slice {
@@ -100,16 +102,14 @@ class MLDVFG {
             return false;
         }
         bool const operator<(const Context &other) const {
-            bool less = true;
-            for (int i = 0; i < other.instance.size() && i < instance.size(); i++) {
-                if (less) {
-                    less = less && instance[i] < other.instance[i];
-                }
-                else {
-                    break;
-                }
+            return this->instance < other.instance;
+        }
+        friend std::ostream& operator<<(std::ostream &out, const Context &context){
+            for(int i : context.instance){
+                out << i <<  " ";
             }
-            return less;
+            out << "\n";
+            return out;
         }
     };
     using NodeContextTy = std::pair<DyckVFGNode *, Context>;

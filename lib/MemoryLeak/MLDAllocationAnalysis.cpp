@@ -10,6 +10,7 @@
 #include "MemoryLeak/MLDReport.h"
 #include "MemoryLeak/MLDVFG.h"
 #include "MemoryLeak/MLDValueFlowAnalysis.h"
+#include "Support/RecursiveTimer.h"
 #include <cassert>
 #include <fstream>
 #include <iostream>
@@ -19,6 +20,7 @@
 #include <llvm/Pass.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_os_ostream.h>
+#include <llvm/Support/raw_ostream.h>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -38,7 +40,7 @@ void MLDAllocationAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool MLDAllocationAnalysis::runOnModule(llvm::Module &M) {
-    std::cout << "executed to here" << std::endl;
+    RecursiveTimer mldallocationanalysis("MLDAllocationAnalysis");
     auto *DyckAA = &getAnalysis<DyckAliasAnalysis>();
     auto *DyckVFG = &getAnalysis<DyckValueFlowAnalysis>();
     DyckAA->getDyckCallGraph()->constructCallSiteMap();
@@ -48,6 +50,7 @@ bool MLDAllocationAnalysis::runOnModule(llvm::Module &M) {
     std::vector<DeclareFunctionDesc> funcDescVec = collectFunctionDescription(M, DyckAA);
     assert(!PrintCSourceFunctions.getValue().empty());
     std::fstream out_stream(PrintCSourceFunctions.getValue());
+    out_stream << funcDescVec.size() << "\n";
     for (DeclareFunctionDesc desc : funcDescVec) {
         out_stream << desc;
     }
@@ -67,7 +70,7 @@ std::vector<DeclareFunctionDesc> MLDAllocationAnalysis::collectFunctionDescripti
             DyckGraphNode *start = DyckAA->getDyckGraph()->retrieveDyckVertex(dyn_cast<Value>(argIt)).first;
             indexOfParameters.push_back(start->getIndex());
             std::set<int> visited;
-            dfsearchAllocationSiteReached(start, DyckAA->getDyckGraph(), 20, visited, paramEdgeSet, allocationIndexes);
+            dfsearchAllocationSiteReached(start, DyckAA->getDyckGraph(), 5, visited, paramEdgeSet, allocationIndexes);
         }
         std::set<AliasNodeEdgeDesc> retEdgeSet;
         DyckCallGraphNode *CGNode = DyckAA->getDyckCallGraph()->getFunction(&func);
@@ -75,13 +78,15 @@ std::vector<DeclareFunctionDesc> MLDAllocationAnalysis::collectFunctionDescripti
             DyckGraphNode *start = DyckAA->getDyckGraph()->retrieveDyckVertex(*retIt).first;
             indexOfReturns.push_back(start->getIndex());
             std::set<int> visited;
-            dfsearchAllocationSiteReached(start, DyckAA->getDyckGraph(), 20, visited, retEdgeSet, allocationIndexes);
+            dfsearchAllocationSiteReached(start, DyckAA->getDyckGraph(), 5, visited, retEdgeSet, allocationIndexes);
         }
         if (allocationIndexes.empty()) {
             continue;
         }
-        funcDescVec.push_back({func.getName().str(), static_cast<int>(func.arg_size()), indexOfParameters, indexOfReturns,
-                               paramEdgeSet, retEdgeSet, allocationIndexes});
+        if (allocationIndexes.size() > 0) {
+            funcDescVec.push_back({func.getName().str(), static_cast<int>(func.arg_size()), indexOfParameters, indexOfReturns,
+                                   paramEdgeSet, retEdgeSet, allocationIndexes});
+        }
     }
     return funcDescVec;
 }
@@ -170,7 +175,7 @@ std::istream &operator>>(std::istream &In, DeclareFunctionDesc &DecFuncDesc) {
     }
     size_t sizeOfAliasGraphOfReturns = 0;
     In >> sizeOfAliasGraphOfReturns;
-    for (int i = 0; i < sizeOfAliasGraphOfParameters; i++) {
+    for (int i = 0; i < sizeOfAliasGraphOfReturns; i++) {
         int startIndex = 0, endIndex = 0;
         std::string labelDesc;
         In >> startIndex >> endIndex >> labelDesc;

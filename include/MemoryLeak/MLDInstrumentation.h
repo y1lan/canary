@@ -31,8 +31,9 @@ public:
     std::vector<NaiveAliasGraphNode *> ParamNodes;
     NaiveAliasGraphNode *retNode;
     std::map<int, NaiveAliasGraphNode *> NodesMap;
-    NaiveAliasGraph(DeclareFunctionDesc &desc);
-    void instrument(IRBuilder<> &irBuilder, CallInst *callInst, Module& M);
+    NaiveAliasGraph(const DeclareFunctionDesc &desc);
+    void instrument(IRBuilder<> &irBuilder, CallInst *callInst, Module &M);
+    void instrumentRe(IRBuilder<> &irBuilder, CallInst *callInst, Module &M);
     ~NaiveAliasGraph();
 };
 
