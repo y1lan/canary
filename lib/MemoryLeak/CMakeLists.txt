@@ -6,3 +6,5 @@ add_library(CanaryMemoryLeak STATIC
     MLDAllocationAnalysis.cpp
     MLDInstrumentation.cpp
 )
+
+target_link_libraries(CanaryMemoryLeak z3)
