@@ -61,20 +61,22 @@ bool MLDInstrumentation::runOnModule(Module &M) {
     FunctionCallee mallocCallee = M.getOrInsertFunction("malloc", mallocFT);
     for (auto &F : M) {
         if (F.isIntrinsic()) {
-            return false;
+            continue;
         }
         std::vector<CallInst *> callInstVec;
         for (auto &I : instructions(F)) {
             if (isa<CallInst>(I)) {
                 CallInst *callInst = dyn_cast<CallInst>(&I);
+                outs() << callInst->getCalledFunction() << "\n";
                 if (callInst->getCalledFunction()) {
+                    outs() << callInst->getCalledFunction()->getName().str() << "\n";
                     if (this->FuncDescMap.find(callInst->getCalledFunction()->getName().str()) != this->FuncDescMap.end()) {
                         callInstVec.push_back(callInst);
                     }
                 }
             }
         }
-        // outs() << callInstVec.size() << "\n";
+        outs() << callInstVec.size() << "\n";
         for (CallInst *callInst : callInstVec) {
             IRBuilder<> irBuilder(callInst->getContext());
             BasicBlock *parent = callInst->getParent();
