@@ -66,8 +66,6 @@ int main(int argc, char **argv) {
     // Enable debug stream buffering.
     llvm::EnableDebugBuffering = true;
 
-    // Call llvm_shutdown() on exit.
-    llvm_shutdown_obj Y;
 
     // Print a stack trace if a fatal signal occurs.
     sys::PrintStackTraceOnErrorSignal(argv[0]);

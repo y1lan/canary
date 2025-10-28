@@ -8,4 +8,4 @@ add_library(CanaryMemoryLeak STATIC
     MLDDeallocationAnalysis.cpp
 )
 
-target_link_libraries(CanaryMemoryLeak z3)
+target_link_libraries(CanaryMemoryLeak PRIVATE z3)

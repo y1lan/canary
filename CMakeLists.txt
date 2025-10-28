@@ -20,13 +20,26 @@ execute_process(COMMAND ${LLVMCONFIG} --ldflags OUTPUT_VARIABLE CMAKE_EXE_LINKER
 execute_process(COMMAND ${LLVMCONFIG} --system-libs OUTPUT_VARIABLE LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(COMMAND ${LLVMCONFIG} --includedir OUTPUT_VARIABLE LLVM_INCLUDE_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${LIBS} -L/home/yl/Application/lib -lz3 ")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${LIBS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti ")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ")
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+if(EXISTS "/opt/homebrew/include/z3.h")
+    set(Z3_INCLUDE_DIR "/opt/homebrew/include")
+    set(Z3_LIB_DIR "/opt/homebrew/lib")
+elseif(EXISTS "/usr/local/include/z3.h")
+    set(Z3_INCLUDE_DIR "/usr/local/include")
+    set(Z3_LIB_DIR "/usr/local/lib")
+else()
+    message(FATAL_ERROR "Z3 not found. Please install with 'brew install z3'")
+endif()
+
+include_directories(AFTER ${Z3_INCLUDE_DIR})
+link_directories(${Z3_LIB_DIR})
 
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(AFTER ${CMAKE_CURRENT_SOURCE_DIR}/include)
