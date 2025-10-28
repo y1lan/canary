@@ -22,7 +22,6 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/Support/Casting.h"
-#include <linux/limits.h>
 #include <llvm/IR/Instructions.h>
 #include <map>
 #include <set>
