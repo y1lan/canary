@@ -1,5 +1,5 @@
-#ifndef MEMORYLEAK_MLDREPORT_H
-#define MEMORYLEAK_MLDREPORT_H
+#ifndef MEMORYLEAK_MLDALLOCATIONANALYSIS_H
+#define MEMORYLEAK_MLDALLOCATIONANALYSIS_H
 
 #include "DyckAA/DyckAliasAnalysis.h"
 #include "DyckAA/DyckCallGraph.h"

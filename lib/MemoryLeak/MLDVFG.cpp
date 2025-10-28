@@ -144,8 +144,11 @@ void MLDVFG::BackwardReachable(DyckVFGNode *VFGNode) {
 
 void MLDVFG::printVFG() const {
     std::set<DyckVFGNode *> AllInOne;
-    for (auto ValReach : LeakMap) {
-        AllInOne.insert(ValReach.second.reach_begin(), ValReach.second.reach_end());
+    // for (auto ValReach : LeakMap) {
+    //     AllInOne.insert(ValReach.second.reach_begin(), ValReach.second.reach_end());
+    // }
+    for(auto VFGNodeIt = VFG->node_begin(); VFGNodeIt != VFG->node_end(); VFGNodeIt++){
+        AllInOne.insert(*VFGNodeIt);
     }
     printSubGraph(AllInOne, "vfg.dot");
 }

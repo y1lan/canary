@@ -33,6 +33,7 @@ private:
     const char *NodeName;
     bool ContainsNull = false;
     bool AliasOfHeapAlloc = false;
+    bool AliasOfDealloc = false;
     std::set<DyckGraphEdgeLabel *> InLables;
     std::set<DyckGraphEdgeLabel *> OutLables;
 
@@ -121,6 +122,10 @@ public:
     void setAliasOfHeapAlloc(){ AliasOfHeapAlloc = true;}
     
     bool isAliasOfHeapAlloc(){ return AliasOfHeapAlloc;}
+    void setAliasOfDealloc(){ AliasOfDealloc = true;}
+    
+    bool isAliasOfDealloc(){ return AliasOfDealloc;}
+    
 
 private:
     void addSource(DyckGraphNode *, DyckGraphEdgeLabel *Label);
