@@ -40,6 +40,7 @@
 
 #include "DyckAA/DyckAliasAnalysis.h"
 #include "MemoryLeak/MLDAllocationAnalysis.h"
+#include "MemoryLeak/MLDDeallocationAnalysis.h"
 #include "MemoryLeak/MLDInstrumentation.h"
 #include "MemoryLeak/MLDValueFlowAnalysis.h"
 #include "Support/RecursiveTimer.h"
@@ -115,24 +116,24 @@ int main(int argc, char **argv) {
     // Passes.add(createLoopSimplifyPass());
     // Passes.add(new LowerConstantExpr());
     // Passes.add(TransformTimer->done());
-    if (!OutputAssembly.getValue()) {
-        auto *AnalysisTimer = new RecursiveTimerPass("Analyzing the bitcode");
-        Passes.add(AnalysisTimer->start());
-        if (AnalysisAllocation) {
-            Passes.add(new MLDAllocationAnalysis());
-        }
-        else {
-            auto *InstrumentationTimer = new RecursiveTimerPass("Instrumenting the LLVM IR");
-            Passes.add(InstrumentationTimer->start());
-            Passes.add(new MLDInstrumentation());
-            Passes.add(InstrumentationTimer->done());
-            auto *MLDAnalysis = new RecursiveTimerPass("Detecting the memory leak in Instrumented LLVM IR");
-            Passes.add(MLDAnalysis->start());
-            Passes.add(new MLDValueFlowAnalysis());
-            Passes.add(MLDAnalysis->done());
-        }
-        Passes.add(AnalysisTimer->done());
+
+    auto *AnalysisTimer = new RecursiveTimerPass("Analyzing the bitcode");
+    Passes.add(AnalysisTimer->start());
+    if (AnalysisAllocation) {
+        Passes.add(new MLDAllocationAnalysis());
+        Passes.add(new MLDDeallocationAnalysis());
     }
+    else {
+        auto *InstrumentationTimer = new RecursiveTimerPass("Instrumenting the LLVM IR");
+        Passes.add(InstrumentationTimer->start());
+        Passes.add(new MLDInstrumentation());
+        Passes.add(InstrumentationTimer->done());
+        auto *MLDAnalysis = new RecursiveTimerPass("Detecting the memory leak in Instrumented LLVM IR");
+        Passes.add(MLDAnalysis->start());
+        Passes.add(new MLDValueFlowAnalysis());
+        Passes.add(MLDAnalysis->done());
+    }
+    Passes.add(AnalysisTimer->done());
 
     std::unique_ptr<ToolOutputFile> Out;
     if (!OutputFilename.getValue().empty()) {

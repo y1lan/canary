@@ -16,8 +16,8 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+ #include <cstddef>
 #include <cassert>
-#include <cstddef>
 #include <ctime>
 #include <llvm/IR/GetElementPtrTypeIterator.h>
 #include <llvm/IR/InstIterator.h>
@@ -45,6 +45,9 @@ static cl::opt<bool> PrintUnknownPointerCall("print-unknown-ptr-call", cl::init(
 
 static cl::opt<unsigned> NumInterIteration("dyckaa-inter-iteration", cl::init(UINT_MAX), cl::Hidden,
                                            cl::desc("The max # iterators for fixed-point inter-proc computation."));
+
+
+//FIXME: Maybe one day add context sensitive to this pointer analysis.
 
 AAAnalyzer::AAAnalyzer(Module *M, DyckGraph *DG, DyckCallGraph *CG) {
     Mod = M;
@@ -374,7 +377,7 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
         Value *Idx = GEP->getOperand(++IdxIdx);
         auto *CI = dyn_cast<ConstantInt>(Idx);
         if (AggOrPointerTy->isStructTy()) {
-            
+
             // example: gep y 0 constIdx
             // s1: y--deref-->?1--(fieldIdx idxLabel)-->?2
 
@@ -386,7 +389,7 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
             // s2: ?3--deref-->?2
             // Regard the struct as a tuple, FieldIdx is i-th element.
             auto FieldIdx = (unsigned) (*(CI->getValue().getRawData()));
-            // Offset is the byte offsets from the base pointer. 
+            // Offset is the byte offsets from the base pointer.
             auto DLayout = this->Mod->getDataLayout();
             auto SLayout = DLayout.getStructLayout(dyn_cast<StructType>(AggOrPointerTy));
             size_t offset = SLayout->getElementOffset(FieldIdx);
@@ -402,12 +405,12 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
 
             // the label representation and feature impl is temporal.
             // s3: y--(fieldIdx offLabel)-->?3
-            // here is still field sensitive. 
+            // here is still field sensitive.
 
             // update current
             // if offset equal to 0, updating would not actually happen.
             Current = FieldPtr;
-        } 
+        }
         else if (AggOrPointerTy->isArrayTy()){
             if(!CI){
                 wrapValue(Idx);
@@ -443,7 +446,7 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
                     Current->addTarget(Element, this->CFLGraph->getOrInsertOffsetEdgeLabel(size * FieldIdx));
                     Current = Element;
                 }
-                
+
             }
         }
         else if (AggOrPointerTy->isVectorTy()){
@@ -451,7 +454,7 @@ DyckGraphNode *AAAnalyzer::handleGEP(GEPOperator *GEP) {
                 wrapValue(Idx);
             }
         }
-         else {
+        else {
             errs() << "\n";
             errs() << *GEP << "\n";
             errs() << "ERROR in handleGep: unknown type:\n";
@@ -473,7 +476,6 @@ DyckGraphNode *AAAnalyzer::wrapValue(Value *V) {
         return RetPair.first;
     }
     DyckGraphNode *VDV = RetPair.first;
-
     // constantTy are handled as below.
     if (isa<ConstantExpr>(V)) {
         unsigned Opcode = ((ConstantExpr *) V)->getOpcode();
@@ -621,7 +623,7 @@ DyckGraphNode *AAAnalyzer::wrapValue(Value *V) {
 void AAAnalyzer::handleInstrinsic(Instruction *Inst) {
     if (!Inst)
         return;
-
+    auto function = Inst->getFunction();
     int Mask = 0;
     auto *CallI = (IntrinsicInst *) Inst;
     switch (CallI->getIntrinsicID()) {
@@ -724,7 +726,7 @@ void AAAnalyzer::handleInstrinsic(Instruction *Inst) {
             if (!(Mask & (1 << K))) {
                 wrapValue(CallI->getArgOperand(K));
             }
-        }        
+        }
     }
     wrapValue(CallI->getCalledOperand());
 }

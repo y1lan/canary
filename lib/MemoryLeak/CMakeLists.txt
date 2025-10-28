@@ -5,6 +5,7 @@ add_library(CanaryMemoryLeak STATIC
     VFGReachable.cpp
     MLDAllocationAnalysis.cpp
     MLDInstrumentation.cpp
+    MLDDeallocationAnalysis.cpp
 )
 
 target_link_libraries(CanaryMemoryLeak z3)

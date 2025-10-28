@@ -6,6 +6,7 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/Pass.h>
 #include <map>
+#include <string>
 #include <vector>
 
 class NaiveAliasGraphNode {
@@ -34,12 +35,43 @@ public:
     NaiveAliasGraph(const DeclareFunctionDesc &desc);
     void instrument(IRBuilder<> &irBuilder, CallInst *callInst, Module &M);
     void instrumentRe(IRBuilder<> &irBuilder, CallInst *callInst, Module &M);
+    void instrumentReFree(IRBuilder<> &irBuilder, CallInst *callInst, Module &M);
     ~NaiveAliasGraph();
+    friend std::ostream &operator<<(std::ostream &os, const NaiveAliasGraph &graph) {
+        os << graph.FuncDesc.FunctionName << std::endl;
+        os << graph.ParamNodes.size() << std::endl;
+        for (auto node : graph.ParamNodes) {
+            os << node->Index << " ";
+        }
+        os << std::endl;
+        if (graph.retNode == nullptr) {
+            os << -1 << std::endl;
+        }
+        else {
+            os << graph.retNode->Index << std::endl;
+        }
+        os << graph.FuncDesc.IndexOfParameters.size() << std::endl;
+        for (auto edge : graph.FuncDesc.AliasGraphOfParameters) {
+            os << edge.StartIndex << " " << edge.EndIndex << " " << edge.LabelDesc << " ";
+        }
+        os << std::endl;
+        os << graph.FuncDesc.IndexOfReturns.size() << std::endl;
+        for (auto edge : graph.FuncDesc.AliasGraphOfReturns) {
+            os << edge.StartIndex << " " << edge.EndIndex << " " << edge.LabelDesc << " ";
+        }
+        os << std::endl;
+        os << graph.FuncDesc.AllocationIndexes.size() << std::endl;
+        for (auto index : graph.FuncDesc.AllocationIndexes) {
+            os << index << " ";
+        }
+        os << std::endl;
+        return os;
+    }
 };
-
 class MLDInstrumentation : public llvm::ModulePass {
 private:
     std::map<std::string, NaiveAliasGraph *> FuncDescMap;
+    std::map<std::string, NaiveAliasGraph *> freeWrapperFuncDescMap;
 
 public:
     static char ID;

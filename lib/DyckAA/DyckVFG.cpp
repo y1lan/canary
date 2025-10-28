@@ -191,7 +191,7 @@ void DyckVFG::buildLocalVFG(Function &F) {
             getOrCreateVFGNode(EVInst);
             getOrCreateVFGNode(EVInst->getAggregateOperand());
         }
-        else if(isa<CallInst>(&I) && API::isHeapAllocate(&I)){
+        else if (isa<CallInst>(&I) && API::isHeapAllocate(&I)) {
             getOrCreateVFGNode(&I);
         }
     }
@@ -286,29 +286,54 @@ DyckVFGNode *DyckVFG::getOrCreateVFGNode(Value *V) {
 
 static void collectValues(std::set<DyckGraphNode *>::iterator Begin, std::set<DyckGraphNode *>::iterator End,
                           std::vector<std::set<Value *>> &CallerVals, std::vector<std::set<Value *>> &CalleeVals, Call *C,
-                          Function *Callee, CFG *Ctrl) {
+                          Function *Callee, CFG *Ctrl, bool RefOrMod) {
+    outs() << "Caller :\t" << C->getInstruction()->getFunction()->getName() << "\n";
+    outs() << "CallInst :\t" << *C->getInstruction() << "\n";
+    outs() << "Callee :\t" << Callee->getName() << "\n";
     auto *Caller = C->getInstruction()->getFunction();
-    int Idx = 0;
     for (auto It = Begin; It != End; ++It) {
         CalleeVals.emplace_back();
         CallerVals.emplace_back();
         auto *N = *It;
         auto *ValSet = (std::set<Value *> *)N->getEquivalentSet();
         for (auto *V : *ValSet) {
+            outs() << "Value: " << *V << "\n";
             if (auto *Arg = dyn_cast<Argument>(V)) {
                 if (Arg->getParent() == Callee)
-                    CalleeVals[Idx].insert(Arg);
+                    CalleeVals.back().insert(Arg);
                 else if (Arg->getParent() == Caller)
-                    CallerVals[Idx].insert(Arg);
+                    CallerVals.back().insert(Arg);
             }
             else if (auto *Inst = dyn_cast<Instruction>(V)) {
                 if (Inst->getFunction() == Callee)
-                    CalleeVals[Idx].insert(Inst);
-                else if (Inst->getFunction() == Caller && Ctrl->reachable(Inst, C->getInstruction()))
-                    CallerVals[Idx].insert(Inst);
+                    CalleeVals.back().insert(Inst);
+                else if (Inst->getFunction() == Caller) {
+                    if (RefOrMod && Ctrl->reachable(Inst, C->getInstruction())) {
+
+                        CallerVals.back().insert(Inst);
+                    }
+                    else if (!RefOrMod && Ctrl->reachable(C->getInstruction(), Inst)) {
+                        CallerVals.back().insert(Inst);
+                    }
+                }
             }
         }
     }
+    for (int i = 0; i < CalleeVals.size(); i++) {
+        outs() << "CalleeVals: ";
+        for (auto *V : CalleeVals[i]) {
+            outs() << *V << " ";
+        }
+        outs() << "\n";
+    }
+    for (int i = 0; i < CallerVals.size(); i++) {
+        outs() << "CallerVals: ";
+        for (auto *V : CallerVals[i]) {
+            outs() << *V << "\n";
+        }
+        outs() << "\n";
+    }
+    outs() << "\n";
 }
 
 void DyckVFG::connectInsertExtractIndirectFlow(std::map<DyckGraphNode *, std::vector<ExtractValueInst *>> ExtractValueMap,
@@ -387,7 +412,7 @@ void DyckVFG::connect(DyckAliasAnalysis *DAA, DyckModRefAnalysis *DMRA, Call *C,
     //  1. get refs, get ref values (in caller, C is reachable from these values, and callee)
     //  2. connect ref values (caller) -> ref values (callee)
     std::vector<std::set<Value *>> RefCallerValues, RefCalleeValues;
-    collectValues(DMRA->ref_begin(Callee), DMRA->ref_end(Callee), RefCallerValues, RefCalleeValues, C, Callee, Ctrl);
+    collectValues(DMRA->ref_begin(Callee), DMRA->ref_end(Callee), RefCallerValues, RefCalleeValues, C, Callee, Ctrl, true);
     for (int i = 0; i < RefCalleeValues.size(); i++)
         for (auto *CallerVal : RefCallerValues[i])
             for (auto *CalleeVal : RefCalleeValues[i])
@@ -396,15 +421,20 @@ void DyckVFG::connect(DyckAliasAnalysis *DAA, DyckModRefAnalysis *DMRA, Call *C,
     // connect indirect outputs
     //  1. get mods, get mod values (in caller and callee)
     //  2. connect ref values (callee) -> ref values (caller)
+    outs() << "Connect indirect outputs in " << C->getInstruction()->getFunction()->getName() << " to " << Callee->getName()
+           << "\n";
+    // for(auto ValueIt = DMRA->mod_begin(Callee); ValueIt != DMRA->mod_end(Callee); ValueIt ++){
+    //     outs() << "Value: " << (*ValueIt)->getEquivalentSet() << "\n";
+    // }
     std::vector<std::set<Value *>> ModCallerValues, ModCalleeValues;
-    collectValues(DMRA->mod_begin(Callee), DMRA->mod_end(Callee), ModCallerValues, ModCalleeValues, C, Callee, Ctrl);
-    for (int i = 0; i < RefCalleeValues.size(); i++)
+    collectValues(DMRA->mod_begin(Callee), DMRA->mod_end(Callee), ModCallerValues, ModCalleeValues, C, Callee, Ctrl, false);
+    for (int i = 0; i < ModCalleeValues.size(); i++)
         for (auto *CalleeVal : ModCalleeValues[i])
             for (auto *CallerVal : ModCallerValues[i])
                 getOrCreateVFGNode(CalleeVal)->addTarget(getOrCreateVFGNode(CallerVal), -C->id());
     // connect indirect inputs through field accesses
     auto I2CallSite = [&C, &Ctrl](Instruction *I, Instruction *E) -> bool { return Ctrl->reachable(I, C->getInstruction()); };
-    
+
     connectInsertExtractIndirectFlow(FuncExtractValueMap[Callee], FuncInsertValueMap[C->getInstruction()->getFunction()],
                                      I2CallSite, C->id());
     // connect indirect outputs through filed accesses

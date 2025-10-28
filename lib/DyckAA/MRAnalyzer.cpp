@@ -63,6 +63,7 @@ void MRAnalyzer::runOnFunction(DyckCallGraphNode *CGNode) {
     // for each instruction,
     // if it refs a node that is reachable from parameters add it to refs
     // if it mods a node that is reachable from parameters add it to mods
+    outs() << F->getName().str() << "\n";
     for (auto &I: instructions(F)) {
         for (unsigned K = 0; K < I.getNumOperands(); ++K) {
             auto *Ref = I.getOperand(K);
@@ -79,8 +80,10 @@ void MRAnalyzer::runOnFunction(DyckCallGraphNode *CGNode) {
             if (!PtrNode) continue;
             auto *ModNode = PtrNode->getOutVertex(DG->getDereferenceEdgeLabel());
             // check if reachable from parameters and returns
-            if (ParReachableNodes.count(ModNode) || RetReachableNodes.count(ModNode)) 
+            if (ParReachableNodes.count(ModNode) || RetReachableNodes.count(ModNode)) {
+                outs() << ModNode->getIndex() << "\n";
                 Mods.insert(ModNode);
+            }
         }
         else {
             // todo other instructions that may revise a memory

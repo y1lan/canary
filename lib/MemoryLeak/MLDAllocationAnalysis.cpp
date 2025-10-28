@@ -49,7 +49,7 @@ bool MLDAllocationAnalysis::runOnModule(llvm::Module &M) {
     MLDVFG *VFG = new MLDVFG(DyckVFG->getDyckVFGraph(), DyckAA->getDyckCallGraph(), DyckAA);
     std::vector<DeclareFunctionDesc> funcDescVec = collectFunctionDescription(M, DyckAA);
     assert(!PrintCSourceFunctions.getValue().empty());
-    std::fstream out_stream(PrintCSourceFunctions.getValue());
+    std::ofstream out_stream(PrintCSourceFunctions.getValue());
     out_stream << funcDescVec.size() << "\n";
     for (DeclareFunctionDesc desc : funcDescVec) {
         out_stream << desc;

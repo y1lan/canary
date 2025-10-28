@@ -49,12 +49,20 @@ cl::opt<std::string> PrintCSourceFunctions(
     "print-c-source-functions", cl::Hidden,
     cl::desc("Works for collecting the functions which may return dynamic allocated memory pointers."));
 
-cl::alias PCSrcFunc("pcsrc", llvm::cl::desc("Alias for -print-c-source-functions"), llvm::cl::aliasopt(PrintCSourceFunctions));
+cl::opt<std::string> PrintCSinkFunctions(
+    "print-c-sink-functions", cl::Hidden,
+    cl::desc("Works for collection the functions which may consume dynamic allocated memory pointers.")
+);
 
+cl::alias PCSrcFunc("pcsrc", llvm::cl::desc("Alias for -print-c-source-functions"), llvm::cl::aliasopt(PrintCSourceFunctions));
+cl::alias PCSinkFunc("pcsink", llvm::cl::desc("Alias for -print-c-sink-functions"), llvm::cl::aliasopt(PrintCSinkFunctions));
 cl::opt<std::string> CSourceFunctions("c-source-functions", cl::value_desc("filename"), cl::Hidden,
                                              cl::desc("path to file which contains the names of c source functions."));
+cl::opt<std::string> CSinkFunctions ("c-sink-functions", cl::value_desc("filename"), cl::Hidden, cl::desc("path to file which contains the names of c sink functions."));
+
 
 cl::alias CSrcFunc("csrc", llvm::cl::desc("Alias for -c-source-functions"), llvm::cl::aliasopt(CSourceFunctions));
+cl::alias CSinkFunc("csink", llvm::cl::desc("Alias for -c-sink-functions"), llvm::cl::aliasopt(CSinkFunctions));
 
 char DyckAliasAnalysis::ID = 0;
 static RegisterPass<DyckAliasAnalysis> X("dyckaa", "a unification based alias analysis");
@@ -141,9 +149,9 @@ bool DyckAliasAnalysis::runOnModule(Module &M) {
         this->printAliasSetInformation();
         outs() << "Done!\n\n";
     }
-    if (!PrintCSourceFunctions.getValue().empty()) {
-        this->printCSourceFunctions();
-    }
+    // if (!PrintCSourceFunctions.getValue().empty()) {
+    //     this->printCSourceFunctions();
+    // }
 
     DEBUG_WITH_TYPE("validate-dyckgraph", DyckPTG->validation(__FILE__, __LINE__));
 
