@@ -1,0 +1,14 @@
+---
+ColumnLimit: 128
+IndentWidth: 4
+AlignOperands: true
+AlignAfterOpenBracket: Align
+AlignEscapedNewlines: Left
+AllowShortIfStatementsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Empty
+BreakBeforeBraces: Custom
+BraceWrapping:
+    BeforeElse: true
+PackConstructorInitializers: Never
+AccessModifierOffset: -4
+...
