@@ -187,36 +187,14 @@ void DyckCallGraph::printFunctionPointersInformation(const std::string &ModuleId
 
         auto FPIt = FW->pointer_call_begin();
         while (FPIt != FW->pointer_call_end()) {
-            /*Value * callInst = fpIt->first;
-            std::string s;
-            raw_string_ostream rso(s);
-            rso << *(callInst);
-            string& edgelabel = rso.str();
-            for (unsigned int i = 0; i < edgelabel.length(); i++) {
-                if (edgelabel[i] == '\"') {
-                    edgelabel[i] = '`';
-                }
-
-                if (edgelabel[i] == '\n') {
-                    edgelabel[i] = ' ';
-                }
-            }
-            fprintf(fout, "CallInst: %s\n", edgelabel.data()); //call inst
-             */
             auto *PC = *FPIt;
             fprintf(FOut, "%d\n", PC->size()); // number of functions
 
             // what functions?
             auto MCIt = PC->begin();
             while (MCIt != PC->end()) {
-                // Function * mcf = *mcIt;
-                // fprintf(fout, "%s\n", mcf->getName().data());
-
                 MCIt++;
             }
-
-            // fprintf(fout, "\n");
-
             FPIt++;
         }
 
